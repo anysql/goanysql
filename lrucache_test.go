@@ -40,7 +40,7 @@ var getTests = []struct {
 	{"string_miss", "myKey", "nonsense", false},
 }
 
-func TestGet(t *testing.T) {
+func TestLRUCacheGet(t *testing.T) {
 	for _, tt := range getTests {
 		lru := NewLRUCache[string, string](1, 0, nil)
 		lru.Add(tt.keyToAdd, "1234")
@@ -53,7 +53,7 @@ func TestGet(t *testing.T) {
 	}
 }
 
-func TestRemove(t *testing.T) {
+func TestLRUCacheRemove(t *testing.T) {
 	lru := NewLRUCache[string, string](1, 0, nil)
 	lru.Add("myKey", "1234")
 	if val, ok := lru.Get("myKey"); !ok {
