@@ -33,7 +33,7 @@ func TestAtomicQueue(t *testing.T) {
 
 func TestAtomicChain(t *testing.T) {
 	var arr [1000]int
-	queue := NewAtomicPoolChain[int]()
+	queue := NewAtomicPoolChain[int](8)
 	for i := range 1000 {
 		queue.Push(&arr[i])
 	}

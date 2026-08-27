@@ -153,6 +153,9 @@ type poolChain[T any] struct {
 
 	// sync.Pool
 	pool sync.Pool
+
+	// bucket size
+	buckets uint
 }
 
 type poolChainElt[T any] struct {
@@ -171,8 +174,6 @@ type poolChainElt[T any] struct {
 	next, prev atomic.Pointer[poolChainElt[T]]
 }
 
-const poolChainInitSize = 256
-
 func (c *poolChain[T]) pushHead(val *T) {
 	d := c.head
 	if d == nil {
@@ -183,7 +184,7 @@ func (c *poolChain[T]) pushHead(val *T) {
 			d.prev.Store(nil)
 		} else {
 			d = new(poolChainElt[T])
-			d.vals = make([]unsafe.Pointer, poolChainInitSize)
+			d.vals = make([]unsafe.Pointer, c.buckets)
 		}
 		c.head = d
 		c.tail.Store(d)
@@ -201,7 +202,7 @@ func (c *poolChain[T]) pushHead(val *T) {
 		d2.next.Store(nil)
 	} else {
 		d2 = &poolChainElt[T]{}
-		d2.vals = make([]unsafe.Pointer, poolChainInitSize)
+		d2.vals = make([]unsafe.Pointer, c.buckets)
 	}
 	d2.prev.Store(d)
 	c.head = d2
@@ -401,8 +402,13 @@ func (fq *AtomicChain[T]) IsEmpty() bool {
 	return fq.poolChain.empty()
 }
 
-func NewAtomicChain[T any](size int) *AtomicChain[T] {
-	q := &AtomicChain[T]{}
+func NewAtomicChain[T any](size uint) *AtomicChain[T] {
+	if bits.OnesCount(size) != 1 {
+		size = (1 << bits.Len(size))
+	}
+	q := &AtomicChain[T]{
+		poolChain: poolChain[T]{buckets: size},
+	}
 	return q
 }
 
@@ -412,10 +418,15 @@ type AtomicPoolChain[T any] struct {
 	cond chan struct{}
 }
 
-func NewAtomicPoolChain[T any]() *AtomicPoolChain[T] {
+func NewAtomicPoolChain[T any](size uint) *AtomicPoolChain[T] {
+	if bits.OnesCount(size) != 1 {
+		size = (1 << bits.Len(size))
+	}
 	q := &AtomicPoolChain[T]{
-		AtomicChain: AtomicChain[T]{},
-		cond:        make(chan struct{}, 1),
+		AtomicChain: AtomicChain[T]{
+			poolChain: poolChain[T]{buckets: size},
+		},
+		cond: make(chan struct{}, 1),
 	}
 	return q
 }
