@@ -21,12 +21,12 @@ import (
 )
 
 func TestAtomicQueue(t *testing.T) {
-	var arr [16]int
-	queue := NewAtomicPoolQueue[int](16)
-	for i := range 16 {
+	var arr [10]int
+	queue := NewAtomicPoolQueue[int](10)
+	for i := range 10 {
 		queue.Push(&arr[i])
 	}
-	for range 16 {
+	for range 10 {
 		queue.Pop()
 	}
 }

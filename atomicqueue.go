@@ -1,6 +1,7 @@
 package goanysql
 
 import (
+	"math/bits"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -300,7 +301,10 @@ func (fq *AtomicQueue[T]) IsEmpty() bool {
 	return fq.poolQueue.empty()
 }
 
-func NewAtomicQueue[T any](size int) *AtomicQueue[T] {
+func NewAtomicQueue[T any](size uint) *AtomicQueue[T] {
+	if bits.OnesCount(size) != 1 {
+		size = (1 << bits.Len(size))
+	}
 	q := &AtomicQueue[T]{
 		poolQueue: poolQueue[T]{
 			vals: make([]unsafe.Pointer, size),
@@ -315,7 +319,10 @@ type AtomicPoolQueue[T any] struct {
 	cond chan struct{}
 }
 
-func NewAtomicPoolQueue[T any](size int) *AtomicPoolQueue[T] {
+func NewAtomicPoolQueue[T any](size uint) *AtomicPoolQueue[T] {
+	if bits.OnesCount(size) != 1 {
+		size = (1 << bits.Len(size))
+	}
 	q := &AtomicPoolQueue[T]{
 		AtomicQueue: AtomicQueue[T]{
 			poolQueue: poolQueue[T]{
