@@ -43,16 +43,16 @@ type cacheShard[T1 any, T2 any] struct {
 // A Key may be any value that is comparable. See http://golang.org/ref/spec#Comparison_operators
 //type Key interface{}
 
-type entry[T1 any, T2 any] struct {
-	key   T1
-	value T2
-	hit   bool
-	pin   bool
+type CacheEntry[T1 any, T2 any] struct {
+	Key   T1
+	Value T2
+	Hit   bool
+	Pin   bool
 }
 
-func (kv *entry[T1, T2]) reset() {
-	kv.hit = false
-	kv.pin = false
+func (kv *CacheEntry[T1, T2]) reset() {
+	kv.Hit = false
+	kv.Pin = false
 }
 
 // New creates a new cacheShard.
@@ -63,7 +63,7 @@ func newShard[T1 any, T2 any](maxEntries int) *cacheShard[T1, T2] {
 		MaxEntries: maxEntries,
 		ll:         list.New(),
 		cache:      make(map[interface{}]*list.Element),
-		entryPool:  &sync.Pool{New: func() any { return &entry[T1, T2]{hit: false} }},
+		entryPool:  &sync.Pool{New: func() any { return &CacheEntry[T1, T2]{Hit: false, Pin: false} }},
 	}
 }
 
@@ -72,22 +72,23 @@ func (c *cacheShard[T1, T2]) Add(key T1, value T2) {
 	if c.cache == nil {
 		c.cache = make(map[interface{}]*list.Element)
 		c.ll = list.New()
-		c.entryPool = &sync.Pool{New: func() any { return &entry[T1, T2]{hit: false} }}
+		c.entryPool = &sync.Pool{New: func() any { return &CacheEntry[T1, T2]{Hit: false, Pin: false} }}
 	}
 	if ee, ok := c.cache[key]; ok {
 		if c.OnEvicted != nil {
 			c.removeElement(ee)
 		} else {
-			kv := ee.Value.(*entry[T1, T2])
-			kv.hit = true
-			kv.value = value
+			kv := ee.Value.(*CacheEntry[T1, T2])
+			kv.Hit = true
+			kv.Value = value
 			return
 		}
 	}
-	val := c.entryPool.Get().(*entry[T1, T2])
-	val.key = key
-	val.value = value
-	val.hit = false
+	val := c.entryPool.Get().(*CacheEntry[T1, T2])
+	val.Key = key
+	val.Value = value
+	val.Hit = false
+	val.Pin = false
 	ele := c.ll.PushFront(val)
 	c.cache[key] = ele
 	if c.MaxEntries != 0 && c.ll.Len() > c.MaxEntries {
@@ -101,9 +102,9 @@ func (c *cacheShard[T1, T2]) Get(key T1) (value T2, ok bool) {
 		return
 	}
 	if ele, hit := c.cache[key]; hit {
-		kv := ele.Value.(*entry[T1, T2])
-		kv.hit = true
-		return kv.value, true
+		kv := ele.Value.(*CacheEntry[T1, T2])
+		kv.Hit = true
+		return kv.Value, true
 	}
 	return
 }
@@ -114,7 +115,7 @@ func (c *cacheShard[T1, T2]) Pin(key T1) bool {
 		return false
 	}
 	if ele, hit := c.cache[key]; hit {
-		ele.Value.(*entry[T1, T2]).pin = true
+		ele.Value.(*CacheEntry[T1, T2]).Pin = true
 		return true
 	}
 	return false
@@ -139,14 +140,14 @@ func (c *cacheShard[T1, T2]) RemoveOldest() {
 again:
 	ele := c.ll.Back()
 	if ele != nil {
-		kv := ele.Value.(*entry[T1, T2])
-		if retry < 2 && kv.hit {
+		kv := ele.Value.(*CacheEntry[T1, T2])
+		if retry < 2 && kv.Hit {
 			c.ll.MoveToFront(ele)
-			kv.hit = false
+			kv.Hit = false
 			retry++
 			goto again
 		} else {
-			if kv.pin {
+			if kv.Pin {
 				c.ll.MoveToFront(ele)
 			} else {
 				c.removeElement(ele)
@@ -165,12 +166,12 @@ again:
 	if ele != nil {
 		if retry < limit {
 			retry++
-			kv := ele.Value.(*entry[T1, T2])
-			if !kv.hit && !kv.pin {
+			kv := ele.Value.(*CacheEntry[T1, T2])
+			if !kv.Hit && !kv.Pin {
 				c.removeElement(ele)
 			} else {
 				c.ll.MoveToFront(ele)
-				kv.hit = false
+				kv.Hit = false
 			}
 			goto again
 		}
@@ -179,10 +180,10 @@ again:
 
 func (c *cacheShard[T1, T2]) removeElement(e *list.Element) {
 	c.ll.Remove(e)
-	kv := e.Value.(*entry[T1, T2])
-	delete(c.cache, kv.key)
+	kv := e.Value.(*CacheEntry[T1, T2])
+	delete(c.cache, kv.Key)
 	if c.OnEvicted != nil {
-		c.OnEvicted(kv.key, kv.value)
+		c.OnEvicted(kv.Key, kv.Value)
 	}
 	kv.reset()
 	c.entryPool.Put(kv)
@@ -200,8 +201,8 @@ func (c *cacheShard[T1, T2]) Len() int {
 func (c *cacheShard[T1, T2]) Clear() {
 	if c.OnEvicted != nil {
 		for _, e := range c.cache {
-			kv := e.Value.(*entry[T1, T2])
-			c.OnEvicted(kv.key, kv.value)
+			kv := e.Value.(*CacheEntry[T1, T2])
+			c.OnEvicted(kv.Key, kv.Value)
 		}
 	}
 	c.ll = nil
