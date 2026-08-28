@@ -532,6 +532,14 @@ func (fq *AtomicPriorityChain[T]) Pop() *T {
 	return nil
 }
 
+func (fq *AtomicPriorityChain[T]) HighQ() *AtomicChain[T] {
+	return fq.qhigh
+}
+
+func (fq *AtomicPriorityChain[T]) LowQ() *AtomicChain[T] {
+	return fq.qlow
+}
+
 func (fq *AtomicPriorityChain[T]) IsEmpty() bool {
 	return fq.qhigh.empty() && fq.qlow.empty()
 }
