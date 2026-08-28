@@ -50,6 +50,12 @@ func TestLRUCacheGet(t *testing.T) {
 		} else if ok && val != "1234" {
 			t.Fatalf("%s expected get to return 1234 but got %v", tt.name, val)
 		}
+		lru.ForAll(func(entry *CacheEntry[string, string]) bool {
+			return false
+		})
+		if lru.Len() != 0 {
+			t.Fatal("Incorrect LRUCache length")
+		}
 	}
 }
 
@@ -65,5 +71,8 @@ func TestLRUCacheRemove(t *testing.T) {
 	lru.Remove("myKey")
 	if _, ok := lru.Get("myKey"); ok {
 		t.Fatal("TestRemove returned a removed entry")
+	}
+	if lru.Len() != 0 {
+		t.Fatal("Incorrect LRUCache length")
 	}
 }

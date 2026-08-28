@@ -221,6 +221,16 @@ func (c *cacheShard[T1, T2]) Clear() {
 	c.cache = nil
 }
 
+// For all items
+func (c *cacheShard[T1, T2]) ForAll(f func(entry *CacheEntry[T1, T2]) bool) {
+	for _, e := range c.cache {
+		kv := e.Value.(*CacheEntry[T1, T2])
+		if !f(kv) {
+			c.removeElement(e)
+		}
+	}
+}
+
 func (c *cacheShard[T1, T2]) setOnEvicted(f func(key T1, value T2)) {
 	c.OnEvicted = f
 }
@@ -326,6 +336,14 @@ func (c *LRUCache[T1, T2]) Clear() {
 	for _, shard := range c.shards {
 		shard.Lock()
 		shard.Clear()
+		shard.Unlock()
+	}
+}
+
+func (c *LRUCache[T1, T2]) ForAll(f func(entry *CacheEntry[T1, T2]) bool) {
+	for _, shard := range c.shards {
+		shard.Lock()
+		shard.ForAll(f)
 		shard.Unlock()
 	}
 }
