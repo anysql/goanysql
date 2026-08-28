@@ -3,6 +3,7 @@ package goanysql
 import (
 	"math/bits"
 	"sync/atomic"
+	"time"
 )
 
 type ReadStatsItem struct {
@@ -11,8 +12,12 @@ type ReadStatsItem struct {
 }
 
 func (irs *ReadStatsItem) Touch(tm int64) {
-	atomic.OrUint64(&irs.a_mins, (uint64(1) << ((tm / 60) % 60)))                                    // set current min
-	atomic.OrUint64(&irs.a_dayh, (uint64(1)<<(32+(tm/3600)%24))|(uint64(1)<<((tm/86400)%32)))        // set current hour and day
+	atomic.OrUint64(&irs.a_mins, (uint64(1) << ((tm / 60) % 60)))                             // set current min
+	atomic.OrUint64(&irs.a_dayh, (uint64(1)<<(32+(tm/3600)%24))|(uint64(1)<<((tm/86400)%32))) // set current hour and day
+	irs.Clear(tm)
+}
+
+func (irs *ReadStatsItem) Clear(tm int64) {
 	atomic.AndUint64(&irs.a_mins, ^(uint64(1) << ((tm/60 + 1) % 60)))                                // clear next min
 	atomic.AndUint64(&irs.a_dayh, ^(uint64(1)<<(32+(tm/3600+1)%24))|^(uint64(1)<<((tm/86400+1)%32))) // clear next hour and day
 }
@@ -52,6 +57,17 @@ func (fsc *FileReadStats) Touch(inode uint64, tm int64) {
 	var val ReadStatsItem
 	val.Touch(tm)
 	fsc.cache.Add(inode, val)
+}
+
+func (fsc *FileReadStats) ResetStats() {
+	for {
+		time.Sleep(10 * time.Second)
+		now := time.Now().Unix()
+		fsc.cache.ForAll(func(entry *CacheEntry[uint64, ReadStatsItem]) bool {
+			entry.Value.Clear(now)
+			return (entry.Value.a_dayh+entry.Value.a_mins != 0)
+		})
+	}
 }
 
 func (fsc *FileReadStats) ScoreMins(inode uint64) int {
