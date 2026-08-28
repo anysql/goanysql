@@ -8,6 +8,8 @@ import (
 	"unsafe"
 )
 
+const maxRetries = 3
+
 // AtomicQueue is a lock-free fixed-size single-producer,
 // multi-consumer queue. The single producer can both push and pop
 // from the head, and consumers can pop from the tail.
@@ -82,7 +84,7 @@ retry:
 	if !atomic.CompareAndSwapPointer(slot, nil, unsafe.Pointer(val)) {
 		// Another goroutine is still cleaning up the tail, so
 		// the queue is actually still full.
-		if retrycnt < 3 {
+		if retrycnt < maxRetries {
 			retrycnt++
 			runtime.Gosched()
 			goto retry
@@ -271,7 +273,9 @@ type AtomicQueue[T any] struct {
 
 func (fq *AtomicQueue[T]) Push(m *T) {
 	for !fq.TryPush(m) {
-		runtime.Gosched()
+		for range maxRetries {
+			runtime.Gosched()
+		}
 	}
 }
 
@@ -283,7 +287,7 @@ retry:
 		fq.wlock.Store(false)
 		return ret
 	}
-	if retrycnt < 3 {
+	if retrycnt < maxRetries {
 		retrycnt++
 		runtime.Gosched()
 		goto retry
@@ -358,7 +362,7 @@ func (fq *AtomicPoolQueue[T]) Consume(f PoolQueueFunc[T]) {
 		for v := fq.Pop(); v != nil; v = fq.Pop() {
 			f(v)
 		}
-		for range 3 {
+		for range maxRetries * 5 {
 			runtime.Gosched()
 		}
 	}
@@ -371,7 +375,9 @@ type AtomicChain[T any] struct {
 
 func (fq *AtomicChain[T]) Push(m *T) {
 	for !fq.TryPush(m) {
-		runtime.Gosched()
+		for range maxRetries {
+			runtime.Gosched()
+		}
 	}
 }
 
@@ -383,7 +389,7 @@ retry:
 		fq.wlock.Store(false)
 		return true
 	}
-	if retrycnt < 3 {
+	if retrycnt < maxRetries {
 		retrycnt++
 		runtime.Gosched()
 		goto retry
@@ -452,7 +458,7 @@ func (fq *AtomicPoolChain[T]) Consume(f PoolQueueFunc[T]) {
 		for v := fq.Pop(); v != nil; v = fq.Pop() {
 			f(v)
 		}
-		for range 3 {
+		for range maxRetries * 5 {
 			runtime.Gosched()
 		}
 	}
