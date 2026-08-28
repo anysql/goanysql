@@ -536,6 +536,13 @@ func (fq *AtomicPriorityChain[T]) IsEmpty() bool {
 	return fq.qhigh.empty() && fq.qlow.empty()
 }
 
+func (fq *AtomicPriorityChain[T]) Wait() {
+	if fq.IsEmpty() {
+		fq.wait.Store(true)
+		<-fq.cond
+	}
+}
+
 func (fq *AtomicPriorityChain[T]) Consume(fh PoolQueueFunc[T], fl PoolQueueFunc[T]) {
 	fq.wait.Store(true)
 	for {
