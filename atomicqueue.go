@@ -559,6 +559,18 @@ func (fq *AtomicPriorityChain[T]) IsEmptyL() bool {
 	return fq.qlow.empty()
 }
 
+func (fq *AtomicPriorityChain[T]) Length() int64 {
+	return fq.qhigh.Length() + fq.qlow.Length()
+}
+
+func (fq *AtomicPriorityChain[T]) LengthH() int64 {
+	return fq.qhigh.Length()
+}
+
+func (fq *AtomicPriorityChain[T]) LengthL() int64 {
+	return fq.qlow.Length()
+}
+
 func (fq *AtomicPriorityChain[T]) Wait() {
 	if fq.IsEmpty() {
 		fq.wait.Store(true)
