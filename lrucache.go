@@ -68,7 +68,7 @@ func newShard[T1 any, T2 any](maxEntries int) *cacheShard[T1, T2] {
 }
 
 // Add adds a value to the cache.
-func (c *cacheShard[T1, T2]) Add(key T1, value T2) {
+func (c *cacheShard[T1, T2]) Add(key T1, value T2) bool {
 	if c.cache == nil {
 		c.cache = make(map[interface{}]*list.Element)
 		c.ll = list.New()
@@ -81,7 +81,7 @@ func (c *cacheShard[T1, T2]) Add(key T1, value T2) {
 			kv := ee.Value.(*CacheEntry[T1, T2])
 			kv.Hit = true
 			kv.Value = value
-			return
+			return false
 		}
 	}
 	val := c.entryPool.Get().(*CacheEntry[T1, T2])
@@ -94,6 +94,7 @@ func (c *cacheShard[T1, T2]) Add(key T1, value T2) {
 	if c.MaxEntries != 0 && c.ll.Len() > c.MaxEntries {
 		c.RemoveOldest()
 	}
+	return true
 }
 
 // Get looks up a key's value from the cache.
