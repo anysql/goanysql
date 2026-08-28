@@ -47,10 +47,12 @@ type entry[T1 any, T2 any] struct {
 	key   T1
 	value T2
 	hit   bool
+	pin   bool
 }
 
 func (kv *entry[T1, T2]) reset() {
 	kv.hit = false
+	kv.pin = false
 }
 
 // New creates a new cacheShard.
@@ -76,8 +78,9 @@ func (c *cacheShard[T1, T2]) Add(key T1, value T2) {
 		if c.OnEvicted != nil {
 			c.removeElement(ee)
 		} else {
-			ee.Value.(*entry[T1, T2]).hit = true
-			ee.Value.(*entry[T2, T2]).value = value
+			kv := ee.Value.(*entry[T1, T2])
+			kv.hit = true
+			kv.value = value
 			return
 		}
 	}
@@ -98,10 +101,23 @@ func (c *cacheShard[T1, T2]) Get(key T1) (value T2, ok bool) {
 		return
 	}
 	if ele, hit := c.cache[key]; hit {
-		ele.Value.(*entry[T1, T2]).hit = true
-		return ele.Value.(*entry[T1, T2]).value, true
+		kv := ele.Value.(*entry[T1, T2])
+		kv.hit = true
+		return kv.value, true
 	}
 	return
+}
+
+// Pinn a key's value in the cache.
+func (c *cacheShard[T1, T2]) Pin(key T1) bool {
+	if c.cache == nil {
+		return false
+	}
+	if ele, hit := c.cache[key]; hit {
+		ele.Value.(*entry[T1, T2]).pin = true
+		return true
+	}
+	return false
 }
 
 // Remove removes the provided key from the cache.
@@ -123,13 +139,18 @@ func (c *cacheShard[T1, T2]) RemoveOldest() {
 again:
 	ele := c.ll.Back()
 	if ele != nil {
-		if retry < 2 && ele.Value.(*entry[T1, T2]).hit {
+		kv := ele.Value.(*entry[T1, T2])
+		if retry < 2 && kv.hit {
 			c.ll.MoveToFront(ele)
-			ele.Value.(*entry[T1, T2]).hit = false
+			kv.hit = false
 			retry++
 			goto again
 		} else {
-			c.removeElement(ele)
+			if kv.pin {
+				c.ll.MoveToFront(ele)
+			} else {
+				c.removeElement(ele)
+			}
 		}
 	}
 }
@@ -144,11 +165,12 @@ again:
 	if ele != nil {
 		if retry < limit {
 			retry++
-			if !ele.Value.(*entry[T1, T2]).hit {
+			kv := ele.Value.(*entry[T1, T2])
+			if !kv.hit && !kv.pin {
 				c.removeElement(ele)
 			} else {
 				c.ll.MoveToFront(ele)
-				ele.Value.(*entry[T1, T2]).hit = false
+				kv.hit = false
 			}
 			goto again
 		}
@@ -233,6 +255,13 @@ func (c *LRUCache[T1, T2]) Get(key T1) (value T2, ok bool) {
 	shard.RLock()
 	defer shard.RUnlock()
 	return shard.Get(key)
+}
+
+func (c *LRUCache[T1, T2]) Pin(key T1) bool {
+	shard := c.getShard(key)
+	shard.RLock()
+	defer shard.RUnlock()
+	return shard.Pin(key)
 }
 
 // Remove removes the provided key from the cache.
