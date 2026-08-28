@@ -370,8 +370,7 @@ func (fq *AtomicPoolQueue[T]) Consume(f PoolQueueFunc[T]) {
 
 type AtomicChain[T any] struct {
 	poolChain[T]
-	length atomic.Int64
-	wlock  atomic.Bool
+	wlock atomic.Bool
 }
 
 func (fq *AtomicChain[T]) Push(m *T) {
@@ -388,7 +387,6 @@ retry:
 	if fq.wlock.CompareAndSwap(false, true) {
 		fq.poolChain.pushHead(m)
 		fq.wlock.Store(false)
-		fq.length.Add(1)
 		return true
 	}
 	if retrycnt < maxRetries {
@@ -401,14 +399,9 @@ retry:
 
 func (fq *AtomicChain[T]) Pop() *T {
 	if v, ok := fq.poolChain.popTail(); ok {
-		fq.length.Add(-1)
 		return v
 	}
 	return nil
-}
-
-func (fq *AtomicChain[T]) Length() int64 {
-	return fq.length.Load()
 }
 
 func (fq *AtomicChain[T]) IsEmpty() bool {
@@ -494,19 +487,12 @@ func NewAtomicPriorityChain[T any](size uint) *AtomicPriorityChain[T] {
 	return q
 }
 
-func (fq *AtomicPriorityChain[T]) PushH(m *T) {
-	fq.qhigh.Push(m)
-	if fq.wait.Load() {
-		fq.wait.Store(false)
-		select {
-		case fq.cond <- struct{}{}:
-		default:
-		}
+func (fq *AtomicPriorityChain[T]) Push(m *T, hpri bool) {
+	if hpri {
+		fq.qhigh.Push(m)
+	} else {
+		fq.qlow.Push(m)
 	}
-}
-
-func (fq *AtomicPriorityChain[T]) PushL(m *T) {
-	fq.qlow.Push(m)
 	if fq.wait.Load() {
 		fq.wait.Store(false)
 		select {
@@ -530,49 +516,25 @@ func (fq *AtomicPriorityChain[T]) PopL() *T {
 	return nil
 }
 
-func (fq *AtomicPriorityChain[T]) Pop() *T {
+func (fq *AtomicPriorityChain[T]) Pop() (*T, bool) {
 	if v, ok := fq.qhigh.popTail(); ok {
-		return v
+		return v, true
 	} else if v, ok = fq.qlow.popTail(); ok {
-		return v
+		return v, false
 	}
-	return nil
+	return nil, false
 }
 
-func (fq *AtomicPriorityChain[T]) HighQ() *AtomicChain[T] {
-	return fq.qhigh
-}
-
-func (fq *AtomicPriorityChain[T]) LowQ() *AtomicChain[T] {
-	return fq.qlow
-}
-
-func (fq *AtomicPriorityChain[T]) IsEmpty() bool {
-	return fq.qhigh.empty() && fq.qlow.empty()
-}
-
-func (fq *AtomicPriorityChain[T]) IsEmptyH() bool {
-	return fq.qhigh.empty()
-}
-
-func (fq *AtomicPriorityChain[T]) IsEmptyL() bool {
-	return fq.qlow.empty()
-}
-
-func (fq *AtomicPriorityChain[T]) Length() int64 {
-	return fq.qhigh.Length() + fq.qlow.Length()
-}
-
-func (fq *AtomicPriorityChain[T]) LengthH() int64 {
-	return fq.qhigh.Length()
-}
-
-func (fq *AtomicPriorityChain[T]) LengthL() int64 {
-	return fq.qlow.Length()
+func (fq *AtomicPriorityChain[T]) IsEmpty(hpri bool) bool {
+	if hpri {
+		return fq.qhigh.empty()
+	} else {
+		return fq.qlow.empty()
+	}
 }
 
 func (fq *AtomicPriorityChain[T]) Wait() {
-	if fq.IsEmpty() {
+	if fq.IsEmpty(true) && fq.IsEmpty(false) {
 		fq.wait.Store(true)
 		<-fq.cond
 	}
@@ -581,7 +543,7 @@ func (fq *AtomicPriorityChain[T]) Wait() {
 func (fq *AtomicPriorityChain[T]) Consume(fh PoolQueueFunc[T], fl PoolQueueFunc[T]) {
 	fq.wait.Store(true)
 	for {
-		if fq.IsEmpty() {
+		if fq.IsEmpty(true) && fq.IsEmpty(false) {
 			fq.wait.Store(true)
 			<-fq.cond
 		}
