@@ -463,3 +463,96 @@ func (fq *AtomicPoolChain[T]) Consume(f PoolQueueFunc[T]) {
 		}
 	}
 }
+
+type AtomicPriorityChain[T any] struct {
+	qhigh *AtomicChain[T]
+	qlow  *AtomicChain[T]
+	wait  atomic.Bool
+	cond  chan struct{}
+}
+
+func NewAtomicPriorityChain[T any](size uint) *AtomicPriorityChain[T] {
+	if bits.OnesCount(size) != 1 {
+		size = (1 << bits.Len(size))
+	}
+	q := &AtomicPriorityChain[T]{
+		qhigh: &AtomicChain[T]{
+			poolChain: poolChain[T]{buckets: size},
+		},
+		qlow: &AtomicChain[T]{
+			poolChain: poolChain[T]{buckets: size},
+		},
+		cond: make(chan struct{}, 1),
+	}
+	return q
+}
+
+func (fq *AtomicPriorityChain[T]) PushH(m *T) {
+	fq.qhigh.Push(m)
+	if fq.wait.Load() {
+		fq.wait.Store(false)
+		select {
+		case fq.cond <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func (fq *AtomicPriorityChain[T]) PushL(m *T) {
+	fq.qlow.Push(m)
+	if fq.wait.Load() {
+		fq.wait.Store(false)
+		select {
+		case fq.cond <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func (fq *AtomicPriorityChain[T]) PopH() *T {
+	if v, ok := fq.qhigh.popTail(); ok {
+		return v
+	}
+	return nil
+}
+
+func (fq *AtomicPriorityChain[T]) PopL() *T {
+	if v, ok := fq.qlow.popTail(); ok {
+		return v
+	}
+	return nil
+}
+
+func (fq *AtomicPriorityChain[T]) Pop() *T {
+	if v, ok := fq.qhigh.popTail(); ok {
+		return v
+	} else if v, ok = fq.qlow.popTail(); ok {
+		return v
+	}
+	return nil
+}
+
+func (fq *AtomicPriorityChain[T]) IsEmpty() bool {
+	return fq.qhigh.empty() && fq.qlow.empty()
+}
+
+func (fq *AtomicPriorityChain[T]) Consume(fh PoolQueueFunc[T], fl PoolQueueFunc[T]) {
+	fq.wait.Store(true)
+	for {
+		if fq.IsEmpty() {
+			fq.wait.Store(true)
+			<-fq.cond
+		}
+	retry:
+		for v := fq.PopH(); v != nil; v = fq.PopH() {
+			fh(v)
+		}
+		if v := fq.PopL(); v != nil {
+			fl(v)
+			goto retry
+		}
+		for range maxRetries * 5 {
+			runtime.Gosched()
+		}
+	}
+}

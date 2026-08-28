@@ -41,3 +41,18 @@ func TestAtomicChain(t *testing.T) {
 		queue.Pop()
 	}
 }
+
+func TestAtomicPriority(t *testing.T) {
+	var arr [1000]int
+	queue := NewAtomicPriorityChain[int](8)
+	for i := range 1000 {
+		if i%2 == 0 {
+			queue.PushH(&arr[i])
+		} else {
+			queue.PushL(&arr[i])
+		}
+	}
+	for range 1000 {
+		queue.Pop()
+	}
+}
