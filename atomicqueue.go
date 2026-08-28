@@ -176,18 +176,24 @@ type poolChainElt[T any] struct {
 	next, prev atomic.Pointer[poolChainElt[T]]
 }
 
+func (c *poolChain[T]) newPoolChainElt() *poolChainElt[T] {
+	var d *poolChainElt[T]
+	if d_ := c.pool.Get(); d_ != nil {
+		d = d_.(*poolChainElt[T])
+		d.next.Store(nil)
+		d.prev.Store(nil)
+	} else {
+		d = new(poolChainElt[T])
+		d.vals = make([]unsafe.Pointer, c.buckets)
+	}
+	return d
+}
+
 func (c *poolChain[T]) pushHead(val *T) {
 	d := c.head
 	if d == nil {
 		// Initialize the chain.
-		if d_ := c.pool.Get(); d_ != nil {
-			d = d_.(*poolChainElt[T])
-			d.next.Store(nil)
-			d.prev.Store(nil)
-		} else {
-			d = new(poolChainElt[T])
-			d.vals = make([]unsafe.Pointer, c.buckets)
-		}
+		d = c.newPoolChainElt()
 		c.head = d
 		c.tail.Store(d)
 	}
@@ -197,15 +203,7 @@ func (c *poolChain[T]) pushHead(val *T) {
 	}
 
 	// The current dequeue is full. Allocate a new one
-	var d2 *poolChainElt[T]
-	if d2_ := c.pool.Get(); d2_ != nil {
-		d2 = d2_.(*poolChainElt[T])
-		d2.prev.Store(nil)
-		d2.next.Store(nil)
-	} else {
-		d2 = &poolChainElt[T]{}
-		d2.vals = make([]unsafe.Pointer, c.buckets)
-	}
+	d2 := c.newPoolChainElt()
 	d2.prev.Store(d)
 	c.head = d2
 	d.next.Store(d2)
