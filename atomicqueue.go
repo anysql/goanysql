@@ -370,7 +370,8 @@ func (fq *AtomicPoolQueue[T]) Consume(f PoolQueueFunc[T]) {
 
 type AtomicChain[T any] struct {
 	poolChain[T]
-	wlock atomic.Bool
+	length atomic.Int64
+	wlock  atomic.Bool
 }
 
 func (fq *AtomicChain[T]) Push(m *T) {
@@ -387,6 +388,7 @@ retry:
 	if fq.wlock.CompareAndSwap(false, true) {
 		fq.poolChain.pushHead(m)
 		fq.wlock.Store(false)
+		fq.length.Add(1)
 		return true
 	}
 	if retrycnt < maxRetries {
@@ -399,9 +401,14 @@ retry:
 
 func (fq *AtomicChain[T]) Pop() *T {
 	if v, ok := fq.poolChain.popTail(); ok {
+		fq.length.Add(-1)
 		return v
 	}
 	return nil
+}
+
+func (fq *AtomicChain[T]) Length() int64 {
+	return fq.length.Load()
 }
 
 func (fq *AtomicChain[T]) IsEmpty() bool {
