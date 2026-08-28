@@ -121,6 +121,17 @@ func (c *cacheShard[T1, T2]) Pin(key T1) bool {
 	return false
 }
 
+// Get a key's entry in the cache.
+func (c *cacheShard[T1, T2]) GetEntry(key T1) (*CacheEntry[T1, T2], bool) {
+	if c.cache == nil {
+		return nil, false
+	}
+	if ele, hit := c.cache[key]; hit {
+		return ele.Value.(*CacheEntry[T1, T2]), true
+	}
+	return nil, false
+}
+
 // Remove removes the provided key from the cache.
 func (c *cacheShard[T1, T2]) Remove(key T1) {
 	if c.cache == nil {
@@ -263,6 +274,14 @@ func (c *LRUCache[T1, T2]) Pin(key T1) bool {
 	shard.RLock()
 	defer shard.RUnlock()
 	return shard.Pin(key)
+}
+
+// Get a key's entry in the cache.
+func (c *LRUCache[T1, T2]) GetEntry(key T1) (*CacheEntry[T1, T2], bool) {
+	shard := c.getShard(key)
+	shard.RLock()
+	defer shard.RUnlock()
+	return shard.GetEntry(key)
 }
 
 // Remove removes the provided key from the cache.
