@@ -65,20 +65,27 @@ func (d *poolQueue[T]) pack(head, tail uint32) uint64 {
 		uint64(tail&mask)
 }
 
-func pause(backoff int) {
-	for j := 0; j < backoff; j++ {
-		// runtime.Gosched() is too heavy here.
-		// In Go 1.24+, you can use clear spin loops or simple empty loops
-		// that the compiler optimizes for hardware pause instructions.
-		_ = j
-	}
+//go:linkname procyield runtime.procyield
+func procyield(cycles uint32)
+
+func pause(backoff uint32) {
+	procyield(backoff)
+	/*
+		for j := 0; j < backoff; j++ {
+			// runtime.Gosched() is too heavy here.
+			// In Go 1.24+, you can use clear spin loops or simple empty loops
+			// that the compiler optimizes for hardware pause instructions.
+			_ = j
+
+		}
+	*/
 }
 
 // pushHead adds val at the head of the queue. It returns false if the
 // queue is full. It must only be called by a single producer.
 func (d *poolQueue[T]) pushHead(val *T) bool {
 	var retrycnt int
-	var backoff int = 1
+	var backoff uint32 = 1
 	ptrs := d.headTail.Load()
 	head, tail := d.unpack(ptrs)
 	if (tail+uint32(len(d.vals)))&(1<<dequeueBits-1) == head {
@@ -283,7 +290,7 @@ type AtomicQueue[T any] struct {
 }
 
 func (fq *AtomicQueue[T]) Push(m *T) {
-	var backoff int = 1
+	var backoff uint32 = 1
 	for !fq.TryPush(m) {
 		if backoff < 64 {
 			backoff <<= 1
@@ -296,7 +303,7 @@ func (fq *AtomicQueue[T]) Push(m *T) {
 
 func (fq *AtomicQueue[T]) TryPush(m *T) bool {
 	var retrycnt int
-	var backoff int = 1
+	var backoff uint32 = 1
 retry:
 	if !fq.wlock.Load() && fq.wlock.CompareAndSwap(false, true) {
 		ret := fq.poolQueue.pushHead(m)
@@ -395,7 +402,7 @@ type AtomicChain[T any] struct {
 }
 
 func (fq *AtomicChain[T]) Push(m *T) {
-	var backoff int = 1
+	var backoff uint32 = 1
 	for !fq.TryPush(m) {
 		if backoff < 64 {
 			backoff <<= 1
@@ -408,7 +415,7 @@ func (fq *AtomicChain[T]) Push(m *T) {
 
 func (fq *AtomicChain[T]) TryPush(m *T) bool {
 	var retrycnt int
-	var backoff int = 1
+	var backoff uint32 = 1
 retry:
 	if !fq.wlock.Load() && fq.wlock.CompareAndSwap(false, true) {
 		fq.poolChain.pushHead(m)
