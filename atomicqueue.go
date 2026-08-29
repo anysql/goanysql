@@ -345,7 +345,7 @@ func NewAtomicQueue[T any](size uint) *AtomicQueue[T] {
 
 type AtomicPoolQueue[T any] struct {
 	AtomicQueue[T]
-	wait atomic.Bool
+	wait atomic.Uint32
 	cond chan struct{}
 }
 
@@ -366,8 +366,8 @@ func NewAtomicPoolQueue[T any](size uint) *AtomicPoolQueue[T] {
 
 func (fq *AtomicPoolQueue[T]) Push(m *T) {
 	fq.AtomicQueue.Push(m)
-	if fq.wait.Load() {
-		if fq.wait.CompareAndSwap(true, false) {
+	if fq.wait.Load() == 1 {
+		if fq.wait.CompareAndSwap(1, 0) {
 			select {
 			case fq.cond <- struct{}{}:
 			default:
@@ -379,11 +379,11 @@ func (fq *AtomicPoolQueue[T]) Push(m *T) {
 type PoolQueueFunc[T any] func(param *T)
 
 func (fq *AtomicPoolQueue[T]) Consume(f PoolQueueFunc[T]) {
-	fq.wait.Store(true)
 	for {
 		if fq.IsEmpty() {
-			fq.wait.Store(true)
-			<-fq.cond
+			if fq.wait.CompareAndSwap(0, 1) {
+				<-fq.cond
+			}
 		}
 		for v := fq.Pop(); v != nil; v = fq.Pop() {
 			f(v)
@@ -464,7 +464,7 @@ func NewAtomicChain[T any](size uint) *AtomicChain[T] {
 
 type AtomicPoolChain[T any] struct {
 	AtomicChain[T]
-	wait atomic.Bool
+	wait atomic.Uint32
 	cond chan struct{}
 }
 
@@ -483,8 +483,8 @@ func NewAtomicPoolChain[T any](size uint) *AtomicPoolChain[T] {
 
 func (fq *AtomicPoolChain[T]) Push(m *T) {
 	fq.AtomicChain.Push(m)
-	if fq.wait.Load() {
-		if fq.wait.CompareAndSwap(true, false) {
+	if fq.wait.Load() == 1 {
+		if fq.wait.CompareAndSwap(1, 0) {
 			select {
 			case fq.cond <- struct{}{}:
 			default:
@@ -494,11 +494,11 @@ func (fq *AtomicPoolChain[T]) Push(m *T) {
 }
 
 func (fq *AtomicPoolChain[T]) Consume(f PoolQueueFunc[T]) {
-	fq.wait.Store(true)
 	for {
 		if fq.IsEmpty() {
-			fq.wait.Store(true)
-			<-fq.cond
+			if fq.wait.CompareAndSwap(0, 1) {
+				<-fq.cond
+			}
 		}
 		for v := fq.Pop(); v != nil; v = fq.Pop() {
 			f(v)
@@ -512,7 +512,7 @@ func (fq *AtomicPoolChain[T]) Consume(f PoolQueueFunc[T]) {
 type AtomicPriorityChain[T any] struct {
 	qhigh *AtomicChain[T]
 	qlow  *AtomicChain[T]
-	wait  atomic.Bool
+	wait  atomic.Uint32
 	cond  chan struct{}
 }
 
@@ -538,8 +538,8 @@ func (fq *AtomicPriorityChain[T]) Push(m *T, hpri bool) {
 	} else {
 		fq.qlow.Push(m)
 	}
-	if fq.wait.Load() {
-		if fq.wait.CompareAndSwap(true, false) {
+	if fq.wait.Load() == 1 {
+		if fq.wait.CompareAndSwap(1, 0) {
 			select {
 			case fq.cond <- struct{}{}:
 			default:
@@ -581,17 +581,18 @@ func (fq *AtomicPriorityChain[T]) IsEmpty(hpri bool) bool {
 
 func (fq *AtomicPriorityChain[T]) Wait() {
 	if fq.IsEmpty(true) && fq.IsEmpty(false) {
-		fq.wait.Store(true)
-		<-fq.cond
+		if fq.wait.CompareAndSwap(0, 1) {
+			<-fq.cond
+		}
 	}
 }
 
 func (fq *AtomicPriorityChain[T]) Consume(fh PoolQueueFunc[T], fl PoolQueueFunc[T]) {
-	fq.wait.Store(true)
 	for {
 		if fq.IsEmpty(true) && fq.IsEmpty(false) {
-			fq.wait.Store(true)
-			<-fq.cond
+			if fq.wait.CompareAndSwap(0, 1) {
+				<-fq.cond
+			}
 		}
 	retry:
 		for v := fq.PopH(); v != nil; v = fq.PopH() {
