@@ -49,6 +49,7 @@ func TestAtomicPriority(t *testing.T) {
 		queue.Push(&arr[i], i%2 == 0)
 	}
 	for range 1000 {
-		queue.Pop()
+		queue.PopH()
+		queue.PopL()
 	}
 }

@@ -320,11 +320,8 @@ retry:
 	return false
 }
 
-func (fq *AtomicQueue[T]) Pop() *T {
-	if v, ok := fq.poolQueue.popTail(); ok && v != nil {
-		return v
-	}
-	return nil
+func (fq *AtomicQueue[T]) Pop() (*T, bool) {
+	return fq.poolQueue.popTail()
 }
 
 func (fq *AtomicQueue[T]) IsEmpty() bool {
@@ -385,8 +382,12 @@ func (fq *AtomicPoolQueue[T]) Consume(f PoolQueueFunc[T]) {
 				<-fq.cond
 			}
 		}
-		for v := fq.Pop(); v != nil; v = fq.Pop() {
-			f(v)
+		for v, ok := fq.Pop(); ok; v, ok = fq.Pop() {
+			if v == nil {
+				return
+			} else {
+				f(v)
+			}
 		}
 		for range maxRetries {
 			runtime.Gosched()
@@ -441,11 +442,8 @@ retry:
 	return false
 }
 
-func (fq *AtomicChain[T]) Pop() *T {
-	if v, ok := fq.poolChain.popTail(); ok {
-		return v
-	}
-	return nil
+func (fq *AtomicChain[T]) Pop() (*T, bool) {
+	return fq.poolChain.popTail()
 }
 
 func (fq *AtomicChain[T]) IsEmpty() bool {
@@ -500,8 +498,12 @@ func (fq *AtomicPoolChain[T]) Consume(f PoolQueueFunc[T]) {
 				<-fq.cond
 			}
 		}
-		for v := fq.Pop(); v != nil; v = fq.Pop() {
-			f(v)
+		for v, ok := fq.Pop(); ok; v, ok = fq.Pop() {
+			if v == nil {
+				return
+			} else {
+				f(v)
+			}
 		}
 		for range maxRetries {
 			runtime.Gosched()
@@ -548,27 +550,12 @@ func (fq *AtomicPriorityChain[T]) Push(m *T, hpri bool) {
 	}
 }
 
-func (fq *AtomicPriorityChain[T]) PopH() *T {
-	if v, ok := fq.qhigh.popTail(); ok {
-		return v
-	}
-	return nil
+func (fq *AtomicPriorityChain[T]) PopH() (*T, bool) {
+	return fq.qhigh.popTail()
 }
 
-func (fq *AtomicPriorityChain[T]) PopL() *T {
-	if v, ok := fq.qlow.popTail(); ok {
-		return v
-	}
-	return nil
-}
-
-func (fq *AtomicPriorityChain[T]) Pop() (*T, bool) {
-	if v, ok := fq.qhigh.popTail(); ok {
-		return v, true
-	} else if v, ok = fq.qlow.popTail(); ok {
-		return v, false
-	}
-	return nil, false
+func (fq *AtomicPriorityChain[T]) PopL() (*T, bool) {
+	return fq.qlow.popTail()
 }
 
 func (fq *AtomicPriorityChain[T]) IsEmpty(hpri bool) bool {
@@ -595,11 +582,19 @@ func (fq *AtomicPriorityChain[T]) Consume(fh PoolQueueFunc[T], fl PoolQueueFunc[
 			}
 		}
 	retry:
-		for v := fq.PopH(); v != nil; v = fq.PopH() {
-			fh(v)
+		for v, ok := fq.PopH(); ok; v, ok = fq.PopH() {
+			if v == nil {
+				return
+			} else {
+				fh(v)
+			}
 		}
-		if v := fq.PopL(); v != nil {
-			fl(v)
+		if v, ok := fq.PopL(); ok {
+			if v == nil {
+				return
+			} else {
+				fl(v)
+			}
 			goto retry
 		}
 		for range maxRetries {
