@@ -367,10 +367,11 @@ func NewAtomicPoolQueue[T any](size uint) *AtomicPoolQueue[T] {
 func (fq *AtomicPoolQueue[T]) Push(m *T) {
 	fq.AtomicQueue.Push(m)
 	if fq.wait.Load() {
-		fq.wait.Store(false)
-		select {
-		case fq.cond <- struct{}{}:
-		default:
+		if fq.wait.CompareAndSwap(true, false) {
+			select {
+			case fq.cond <- struct{}{}:
+			default:
+			}
 		}
 	}
 }
@@ -483,10 +484,11 @@ func NewAtomicPoolChain[T any](size uint) *AtomicPoolChain[T] {
 func (fq *AtomicPoolChain[T]) Push(m *T) {
 	fq.AtomicChain.Push(m)
 	if fq.wait.Load() {
-		fq.wait.Store(false)
-		select {
-		case fq.cond <- struct{}{}:
-		default:
+		if fq.wait.CompareAndSwap(true, false) {
+			select {
+			case fq.cond <- struct{}{}:
+			default:
+			}
 		}
 	}
 }
@@ -537,10 +539,11 @@ func (fq *AtomicPriorityChain[T]) Push(m *T, hpri bool) {
 		fq.qlow.Push(m)
 	}
 	if fq.wait.Load() {
-		fq.wait.Store(false)
-		select {
-		case fq.cond <- struct{}{}:
-		default:
+		if fq.wait.CompareAndSwap(true, false) {
+			select {
+			case fq.cond <- struct{}{}:
+			default:
+			}
 		}
 	}
 }
