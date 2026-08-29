@@ -65,6 +65,15 @@ func (d *poolQueue[T]) pack(head, tail uint32) uint64 {
 		uint64(tail&mask)
 }
 
+func pause(backoff int) {
+	for j := 0; j < backoff; j++ {
+		// runtime.Gosched() is too heavy here.
+		// In Go 1.24+, you can use clear spin loops or simple empty loops
+		// that the compiler optimizes for hardware pause instructions.
+		_ = j
+	}
+}
+
 // pushHead adds val at the head of the queue. It returns false if the
 // queue is full. It must only be called by a single producer.
 func (d *poolQueue[T]) pushHead(val *T) bool {
@@ -90,12 +99,7 @@ retry:
 		}
 		if retrycnt < maxRetries {
 			retrycnt++
-			for j := 0; j < backoff; j++ {
-				// runtime.Gosched() is too heavy here.
-				// In Go 1.24+, you can use clear spin loops or simple empty loops
-				// that the compiler optimizes for hardware pause instructions.
-				_ = j
-			}
+			pause(backoff)
 			goto retry
 		}
 		return false
@@ -285,12 +289,7 @@ func (fq *AtomicQueue[T]) Push(m *T) {
 			backoff <<= 1
 		}
 		for range maxRetries {
-			for j := 0; j < backoff; j++ {
-				// runtime.Gosched() is too heavy here.
-				// In Go 1.24+, you can use clear spin loops or simple empty loops
-				// that the compiler optimizes for hardware pause instructions.
-				_ = j
-			}
+			pause(backoff)
 		}
 	}
 }
@@ -309,12 +308,7 @@ retry:
 	}
 	if retrycnt < maxRetries {
 		retrycnt++
-		for j := 0; j < backoff; j++ {
-			// runtime.Gosched() is too heavy here.
-			// In Go 1.24+, you can use clear spin loops or simple empty loops
-			// that the compiler optimizes for hardware pause instructions.
-			_ = j
-		}
+		pause(backoff)
 		goto retry
 	}
 	return false
@@ -407,12 +401,7 @@ func (fq *AtomicChain[T]) Push(m *T) {
 			backoff <<= 1
 		}
 		for range maxRetries {
-			for j := 0; j < backoff; j++ {
-				// runtime.Gosched() is too heavy here.
-				// In Go 1.24+, you can use clear spin loops or simple empty loops
-				// that the compiler optimizes for hardware pause instructions.
-				_ = j
-			}
+			pause(backoff)
 		}
 	}
 }
@@ -431,12 +420,7 @@ retry:
 	}
 	if retrycnt < maxRetries {
 		retrycnt++
-		for j := 0; j < backoff; j++ {
-			// runtime.Gosched() is too heavy here.
-			// In Go 1.24+, you can use clear spin loops or simple empty loops
-			// that the compiler optimizes for hardware pause instructions.
-			_ = j
-		}
+		pause(backoff)
 		goto retry
 	}
 	return false
