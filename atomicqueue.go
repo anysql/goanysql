@@ -69,6 +69,7 @@ func (d *poolQueue[T]) pack(head, tail uint32) uint64 {
 // queue is full. It must only be called by a single producer.
 func (d *poolQueue[T]) pushHead(val *T) bool {
 	var retrycnt int
+	var backoff int = 1
 	ptrs := d.headTail.Load()
 	head, tail := d.unpack(ptrs)
 	if (tail+uint32(len(d.vals)))&(1<<dequeueBits-1) == head {
@@ -81,12 +82,20 @@ func (d *poolQueue[T]) pushHead(val *T) bool {
 		val = (*T)(dequeueNil)
 	}
 retry:
-	if !atomic.CompareAndSwapPointer(slot, nil, unsafe.Pointer(val)) {
+	if atomic.LoadPointer(slot) != nil || !atomic.CompareAndSwapPointer(slot, nil, unsafe.Pointer(val)) {
 		// Another goroutine is still cleaning up the tail, so
 		// the queue is actually still full.
+		if backoff < 64 {
+			backoff <<= 1
+		}
 		if retrycnt < maxRetries {
 			retrycnt++
-			runtime.Gosched()
+			for j := 0; j < backoff; j++ {
+				// runtime.Gosched() is too heavy here.
+				// In Go 1.24+, you can use clear spin loops or simple empty loops
+				// that the compiler optimizes for hardware pause instructions.
+				_ = j
+			}
 			goto retry
 		}
 		return false
@@ -270,24 +279,42 @@ type AtomicQueue[T any] struct {
 }
 
 func (fq *AtomicQueue[T]) Push(m *T) {
+	var backoff int = 1
 	for !fq.TryPush(m) {
+		if backoff < 64 {
+			backoff <<= 1
+		}
 		for range maxRetries {
-			runtime.Gosched()
+			for j := 0; j < backoff; j++ {
+				// runtime.Gosched() is too heavy here.
+				// In Go 1.24+, you can use clear spin loops or simple empty loops
+				// that the compiler optimizes for hardware pause instructions.
+				_ = j
+			}
 		}
 	}
 }
 
 func (fq *AtomicQueue[T]) TryPush(m *T) bool {
 	var retrycnt int
+	var backoff int = 1
 retry:
-	if fq.wlock.CompareAndSwap(false, true) {
+	if !fq.wlock.Load() && fq.wlock.CompareAndSwap(false, true) {
 		ret := fq.poolQueue.pushHead(m)
 		fq.wlock.Store(false)
 		return ret
 	}
+	if backoff < 64 {
+		backoff <<= 1
+	}
 	if retrycnt < maxRetries {
 		retrycnt++
-		runtime.Gosched()
+		for j := 0; j < backoff; j++ {
+			// runtime.Gosched() is too heavy here.
+			// In Go 1.24+, you can use clear spin loops or simple empty loops
+			// that the compiler optimizes for hardware pause instructions.
+			_ = j
+		}
 		goto retry
 	}
 	return false
@@ -372,24 +399,42 @@ type AtomicChain[T any] struct {
 }
 
 func (fq *AtomicChain[T]) Push(m *T) {
+	var backoff int = 1
 	for !fq.TryPush(m) {
+		if backoff < 64 {
+			backoff <<= 1
+		}
 		for range maxRetries {
-			runtime.Gosched()
+			for j := 0; j < backoff; j++ {
+				// runtime.Gosched() is too heavy here.
+				// In Go 1.24+, you can use clear spin loops or simple empty loops
+				// that the compiler optimizes for hardware pause instructions.
+				_ = j
+			}
 		}
 	}
 }
 
 func (fq *AtomicChain[T]) TryPush(m *T) bool {
 	var retrycnt int
+	var backoff int = 1
 retry:
-	if fq.wlock.CompareAndSwap(false, true) {
+	if !fq.wlock.Load() && fq.wlock.CompareAndSwap(false, true) {
 		fq.poolChain.pushHead(m)
 		fq.wlock.Store(false)
 		return true
 	}
+	if backoff < 64 {
+		backoff <<= 1
+	}
 	if retrycnt < maxRetries {
 		retrycnt++
-		runtime.Gosched()
+		for j := 0; j < backoff; j++ {
+			// runtime.Gosched() is too heavy here.
+			// In Go 1.24+, you can use clear spin loops or simple empty loops
+			// that the compiler optimizes for hardware pause instructions.
+			_ = j
+		}
 		goto retry
 	}
 	return false
