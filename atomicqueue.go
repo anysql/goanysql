@@ -387,7 +387,7 @@ func (fq *AtomicPoolQueue[T]) Consume(f PoolQueueFunc[T]) {
 		for v := fq.Pop(); v != nil; v = fq.Pop() {
 			f(v)
 		}
-		for range maxRetries * 5 {
+		for range maxRetries {
 			runtime.Gosched()
 		}
 	}
@@ -501,7 +501,7 @@ func (fq *AtomicPoolChain[T]) Consume(f PoolQueueFunc[T]) {
 		for v := fq.Pop(); v != nil; v = fq.Pop() {
 			f(v)
 		}
-		for range maxRetries * 5 {
+		for range maxRetries {
 			runtime.Gosched()
 		}
 	}
@@ -598,7 +598,7 @@ func (fq *AtomicPriorityChain[T]) Consume(fh PoolQueueFunc[T], fl PoolQueueFunc[
 			fl(v)
 			goto retry
 		}
-		for range maxRetries * 5 {
+		for range maxRetries {
 			runtime.Gosched()
 		}
 	}
