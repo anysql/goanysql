@@ -17,7 +17,7 @@ const maxRetries = 3
 // It has the added feature that it nils out unused slots to avoid
 // unnecessary retention of objects. This is important for sync.Pool,
 // but not typically a property considered in the literature.
-type poolQueue[T any] struct {
+type poolQueue struct {
 	// headTail packs together a 32-bit head index and a 32-bit
 	// tail index. Both are indexes into vals modulo len(vals)-1.
 	//
@@ -52,14 +52,14 @@ const dequeueBits = 32
 // to represent nil.
 var dequeueNil unsafe.Pointer = unsafe.Pointer(uintptr(1))
 
-func (d *poolQueue[T]) unpack(ptrs uint64) (head, tail uint32) {
+func (d *poolQueue) unpack(ptrs uint64) (head, tail uint32) {
 	const mask = 1<<dequeueBits - 1
 	head = uint32((ptrs >> dequeueBits) & mask)
 	tail = uint32(ptrs & mask)
 	return
 }
 
-func (d *poolQueue[T]) pack(head, tail uint32) uint64 {
+func (d *poolQueue) pack(head, tail uint32) uint64 {
 	const mask = 1<<dequeueBits - 1
 	return (uint64(head) << dequeueBits) |
 		uint64(tail&mask)
@@ -83,7 +83,7 @@ func pause(backoff uint32) {
 
 // pushHead adds val at the head of the queue. It returns false if the
 // queue is full. It must only be called by a single producer.
-func (d *poolQueue[T]) pushHead(val *T) bool {
+func (d *poolQueue) pushHead(val unsafe.Pointer) bool {
 	var retrycnt int
 	var backoff uint32 = 1
 	ptrs := d.headTail.Load()
@@ -95,7 +95,7 @@ func (d *poolQueue[T]) pushHead(val *T) bool {
 	slot := &d.vals[head&uint32(len(d.vals)-1)]
 	// The head slot is free, so we own it.
 	if val == nil {
-		val = (*T)(dequeueNil)
+		val = dequeueNil
 	}
 retry:
 	if atomic.LoadPointer(slot) != nil {
@@ -124,7 +124,7 @@ retry:
 // popTail removes and returns the element at the tail of the queue.
 // It returns false if the queue is empty. It may be called by any
 // number of consumers.
-func (d *poolQueue[T]) popTail() (*T, bool) {
+func (d *poolQueue) popTail() (unsafe.Pointer, bool) {
 	var slot *unsafe.Pointer
 	for {
 		ptrs := d.headTail.Load()
@@ -151,10 +151,10 @@ func (d *poolQueue[T]) popTail() (*T, bool) {
 		val = nil
 	}
 
-	return (*T)(val), true
+	return val, true
 }
 
-func (d *poolQueue[T]) empty() bool {
+func (d *poolQueue) empty() bool {
 	ptrs := d.headTail.Load()
 	head, tail := d.unpack(ptrs)
 	return tail == head
@@ -184,7 +184,7 @@ type poolChain[T any] struct {
 }
 
 type poolChainElt[T any] struct {
-	poolQueue[T]
+	poolQueue
 
 	// next and prev link to the adjacent poolChainElts in this
 	// poolChain.
@@ -221,7 +221,7 @@ func (c *poolChain[T]) pushHead(val *T) {
 		c.tail.Store(d)
 	}
 
-	if d.pushHead(val) {
+	if d.pushHead(unsafe.Pointer(val)) {
 		return
 	}
 
@@ -230,7 +230,7 @@ func (c *poolChain[T]) pushHead(val *T) {
 	d2.prev.Store(d)
 	c.head = d2
 	d.next.Store(d2)
-	d2.pushHead(val)
+	d2.pushHead(unsafe.Pointer(val))
 }
 
 func (c *poolChain[T]) popTail() (*T, bool) {
@@ -249,7 +249,7 @@ func (c *poolChain[T]) popTail() (*T, bool) {
 		d2 := d.next.Load()
 
 		if val, ok := d.popTail(); ok {
-			return val, ok
+			return (*T)(val), ok
 		}
 
 		if d2 == nil {
@@ -311,7 +311,7 @@ func (qw *queueWait) signal() {
 }
 
 type AtomicQueue[T any] struct {
-	poolQueue[T]
+	poolQueue
 	qw    queueWait
 	wlock atomic.Bool
 }
@@ -333,7 +333,7 @@ func (fq *AtomicQueue[T]) TryPush(m *T) bool {
 	var backoff uint32 = 1
 retry:
 	if !fq.wlock.Load() && fq.wlock.CompareAndSwap(false, true) {
-		ret := fq.poolQueue.pushHead(m)
+		ret := fq.poolQueue.pushHead(unsafe.Pointer(m))
 		fq.wlock.Store(false)
 		return ret
 	}
@@ -349,7 +349,8 @@ retry:
 }
 
 func (fq *AtomicQueue[T]) Pop() (*T, bool) {
-	return fq.poolQueue.popTail()
+	v, ok := fq.poolQueue.popTail()
+	return (*T)(v), ok
 }
 
 func (fq *AtomicQueue[T]) IsEmpty() bool {
@@ -361,7 +362,7 @@ func NewAtomicQueue[T any](size uint) *AtomicQueue[T] {
 		size = (1 << bits.Len(size))
 	}
 	q := &AtomicQueue[T]{
-		poolQueue: poolQueue[T]{
+		poolQueue: poolQueue{
 			vals: make([]unsafe.Pointer, size),
 		},
 		qw: queueWait{
