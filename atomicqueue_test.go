@@ -31,20 +31,9 @@ func TestAtomicQueue(t *testing.T) {
 	}
 }
 
-func TestAtomicChain(t *testing.T) {
-	var arr [1000]int
-	queue := NewAtomicChain[int](8)
-	for i := range 1000 {
-		queue.Push(&arr[i])
-	}
-	for range 1000 {
-		queue.Pop()
-	}
-}
-
 func TestAtomicPriority(t *testing.T) {
 	var arr [1000]int
-	queue := NewAtomicPriorityChain[int](8)
+	queue := NewAtomicPriorityQueue[int](8)
 	for i := range 1000 {
 		queue.Push(&arr[i], i%2 == 0)
 	}
