@@ -362,8 +362,7 @@ func NewAtomicPoolQueue[T any](size uint) *AtomicPoolQueue[T] {
 	return q
 }
 
-func (fq *AtomicPoolQueue[T]) Push(m *T) {
-	fq.AtomicQueue.Push(m)
+func (fq *AtomicPoolQueue[T]) signal() {
 	if fq.wait.Load() == 1 {
 		if fq.wait.CompareAndSwap(1, 0) {
 			select {
@@ -372,6 +371,11 @@ func (fq *AtomicPoolQueue[T]) Push(m *T) {
 			}
 		}
 	}
+}
+
+func (fq *AtomicPoolQueue[T]) Push(m *T) {
+	fq.AtomicQueue.Push(m)
+	fq.signal()
 }
 
 type PoolQueueFunc[T any] func(param *T)
@@ -470,8 +474,7 @@ func NewAtomicPoolChain[T any](size uint) *AtomicPoolChain[T] {
 	return q
 }
 
-func (fq *AtomicPoolChain[T]) Push(m *T) {
-	fq.AtomicChain.Push(m)
+func (fq *AtomicPoolChain[T]) signal() {
 	if fq.wait.Load() == 1 {
 		if fq.wait.CompareAndSwap(1, 0) {
 			select {
@@ -480,6 +483,11 @@ func (fq *AtomicPoolChain[T]) Push(m *T) {
 			}
 		}
 	}
+}
+
+func (fq *AtomicPoolChain[T]) Push(m *T) {
+	fq.AtomicChain.Push(m)
+	fq.signal()
 }
 
 func (fq *AtomicPoolChain[T]) Consume(f PoolQueueFunc[T]) {
@@ -525,12 +533,7 @@ func NewAtomicPriorityChain[T any](size uint) *AtomicPriorityChain[T] {
 	return q
 }
 
-func (fq *AtomicPriorityChain[T]) Push(m *T, hpri bool) {
-	if hpri {
-		fq.qhigh.Push(m)
-	} else {
-		fq.qlow.Push(m)
-	}
+func (fq *AtomicPriorityChain[T]) signal() {
 	if fq.wait.Load() == 1 {
 		if fq.wait.CompareAndSwap(1, 0) {
 			select {
@@ -539,6 +542,15 @@ func (fq *AtomicPriorityChain[T]) Push(m *T, hpri bool) {
 			}
 		}
 	}
+}
+
+func (fq *AtomicPriorityChain[T]) Push(m *T, hpri bool) {
+	if hpri {
+		fq.qhigh.Push(m)
+	} else {
+		fq.qlow.Push(m)
+	}
+	fq.signal()
 }
 
 func (fq *AtomicPriorityChain[T]) PopH() (*T, bool) {
