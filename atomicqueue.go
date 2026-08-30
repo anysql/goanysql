@@ -312,8 +312,7 @@ func (qw *queueWait) signal() {
 
 type AtomicQueue[T any] struct {
 	poolQueue
-	qw    queueWait
-	wlock atomic.Bool
+	qw queueWait
 }
 
 func (fq *AtomicQueue[T]) Push(m *T) {
@@ -328,24 +327,13 @@ func (fq *AtomicQueue[T]) Push(m *T) {
 	}
 }
 
+func (fq *AtomicQueue[T]) BPush(m *T) {
+	fq.Push(m)
+	fq.qw.signal()
+}
+
 func (fq *AtomicQueue[T]) TryPush(m *T) bool {
-	var retrycnt int
-	var backoff uint32 = 1
-retry:
-	if !fq.wlock.Load() && fq.wlock.CompareAndSwap(false, true) {
-		ret := fq.poolQueue.pushHead(unsafe.Pointer(m))
-		fq.wlock.Store(false)
-		return ret
-	}
-	if backoff < 64 {
-		backoff <<= 1
-	}
-	if retrycnt < maxRetries {
-		retrycnt++
-		pause(backoff)
-		goto retry
-	}
-	return false
+	return fq.poolQueue.pushHead(unsafe.Pointer(m))
 }
 
 func (fq *AtomicQueue[T]) Pop() (*T, bool) {
@@ -372,11 +360,6 @@ func NewAtomicQueue[T any](size uint) *AtomicQueue[T] {
 	return q
 }
 
-func (fq *AtomicQueue[T]) BPush(m *T) {
-	fq.Push(m)
-	fq.qw.signal()
-}
-
 type QueueFunc[T any] func(param *T)
 
 func (fq *AtomicQueue[T]) Consume(f QueueFunc[T]) {
@@ -399,40 +382,16 @@ func (fq *AtomicQueue[T]) Consume(f QueueFunc[T]) {
 
 type AtomicChain[T any] struct {
 	poolChain[T]
-	qw    queueWait
-	wlock atomic.Bool
+	qw queueWait
 }
 
 func (fq *AtomicChain[T]) Push(m *T) {
-	var backoff uint32 = 1
-	for !fq.TryPush(m) {
-		if backoff < 64 {
-			backoff <<= 1
-		}
-		for range maxRetries {
-			pause(backoff)
-		}
-	}
+	fq.poolChain.pushHead(m)
 }
 
-func (fq *AtomicChain[T]) TryPush(m *T) bool {
-	var retrycnt int
-	var backoff uint32 = 1
-retry:
-	if !fq.wlock.Load() && fq.wlock.CompareAndSwap(false, true) {
-		fq.poolChain.pushHead(m)
-		fq.wlock.Store(false)
-		return true
-	}
-	if backoff < 64 {
-		backoff <<= 1
-	}
-	if retrycnt < maxRetries {
-		retrycnt++
-		pause(backoff)
-		goto retry
-	}
-	return false
+func (fq *AtomicChain[T]) BPush(m *T) {
+	fq.Push(m)
+	fq.qw.signal()
 }
 
 func (fq *AtomicChain[T]) Pop() (*T, bool) {
@@ -454,11 +413,6 @@ func NewAtomicChain[T any](size uint) *AtomicChain[T] {
 		},
 	}
 	return q
-}
-
-func (fq *AtomicChain[T]) BPush(m *T) {
-	fq.Push(m)
-	fq.qw.signal()
 }
 
 func (fq *AtomicChain[T]) Consume(f QueueFunc[T]) {
