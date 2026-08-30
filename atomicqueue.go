@@ -292,6 +292,7 @@ type AtomicQueue[T any] struct {
 	_     [128]byte
 }
 
+//go:inline
 func (fq *AtomicQueue[T]) Push(m *T) {
 	var backoff uint32 = 1
 	for !fq.TryPush(m) {
@@ -304,6 +305,7 @@ func (fq *AtomicQueue[T]) Push(m *T) {
 	}
 }
 
+//go:inline
 func (fq *AtomicQueue[T]) TryPush(m *T) bool {
 	var retrycnt int
 	var backoff uint32 = 1
@@ -324,10 +326,12 @@ retry:
 	return false
 }
 
+//go:inline
 func (fq *AtomicQueue[T]) Pop() (*T, bool) {
 	return fq.poolQueue.popTail()
 }
 
+//go:inline
 func (fq *AtomicQueue[T]) IsEmpty() bool {
 	return fq.poolQueue.empty()
 }
@@ -414,6 +418,7 @@ type AtomicChain[T any] struct {
 	_     [128]byte
 }
 
+//go:inline
 func (fq *AtomicChain[T]) Push(m *T) {
 	var backoff uint32 = 1
 	for !fq.TryPush(m) {
@@ -426,6 +431,7 @@ func (fq *AtomicChain[T]) Push(m *T) {
 	}
 }
 
+//go:inline
 func (fq *AtomicChain[T]) TryPush(m *T) bool {
 	var retrycnt int
 	var backoff uint32 = 1
@@ -446,10 +452,12 @@ retry:
 	return false
 }
 
+//go:inline
 func (fq *AtomicChain[T]) Pop() (*T, bool) {
 	return fq.poolChain.popTail()
 }
 
+//go:inline
 func (fq *AtomicChain[T]) IsEmpty() bool {
 	return fq.poolChain.empty()
 }
