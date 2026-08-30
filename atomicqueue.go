@@ -33,6 +33,7 @@ type poolQueue[T any] struct {
 	// that we can atomically add to it and the overflow is
 	// harmless.
 	headTail atomic.Uint64
+	_        [128]byte
 
 	// vals is a ring buffer of interface{} values stored in this
 	// dequeue. The size of this must be a power of 2.
@@ -286,7 +287,9 @@ func (c *poolChain[T]) empty() bool {
 
 type AtomicQueue[T any] struct {
 	poolQueue[T]
+	_     [128]byte
 	wlock atomic.Bool
+	_     [128]byte
 }
 
 func (fq *AtomicQueue[T]) Push(m *T) {
@@ -343,8 +346,11 @@ func NewAtomicQueue[T any](size uint) *AtomicQueue[T] {
 
 type AtomicPoolQueue[T any] struct {
 	AtomicQueue[T]
+	_    [128]byte
 	wait atomic.Uint32
+	_    [128]byte
 	cond chan struct{}
+	_    [128]byte
 }
 
 func NewAtomicPoolQueue[T any](size uint) *AtomicPoolQueue[T] {
@@ -403,7 +409,9 @@ func (fq *AtomicPoolQueue[T]) Consume(f PoolQueueFunc[T]) {
 
 type AtomicChain[T any] struct {
 	poolChain[T]
+	_     [128]byte
 	wlock atomic.Bool
+	_     [128]byte
 }
 
 func (fq *AtomicChain[T]) Push(m *T) {
@@ -458,8 +466,11 @@ func NewAtomicChain[T any](size uint) *AtomicChain[T] {
 
 type AtomicPoolChain[T any] struct {
 	AtomicChain[T]
+	_    [128]byte
 	wait atomic.Uint32
+	_    [128]byte
 	cond chan struct{}
+	_    [128]byte
 }
 
 func NewAtomicPoolChain[T any](size uint) *AtomicPoolChain[T] {
@@ -515,8 +526,11 @@ func (fq *AtomicPoolChain[T]) Consume(f PoolQueueFunc[T]) {
 type AtomicPriorityChain[T any] struct {
 	qhigh *AtomicChain[T]
 	qlow  *AtomicChain[T]
+	_     [128]byte
 	wait  atomic.Uint32
+	_     [128]byte
 	cond  chan struct{}
+	_     [128]byte
 }
 
 func NewAtomicPriorityChain[T any](size uint) *AtomicPriorityChain[T] {
