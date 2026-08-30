@@ -99,7 +99,7 @@ func (d *poolQueue[T]) pushHead(val *T) bool {
 		val = (*T)(dequeueNil)
 	}
 retry:
-	if atomic.LoadPointer(slot) != nil || !atomic.CompareAndSwapPointer(slot, nil, unsafe.Pointer(val)) {
+	if atomic.LoadPointer(slot) != nil {
 		// Another goroutine is still cleaning up the tail, so
 		// the queue is actually still full.
 		if backoff < 64 {
@@ -112,6 +112,9 @@ retry:
 		}
 		return false
 	}
+
+	// Store the val
+	atomic.StorePointer(slot, unsafe.Pointer(val))
 
 	// Increment head. This passes ownership of slot to popTail
 	// and acts as a store barrier for writing the slot.
