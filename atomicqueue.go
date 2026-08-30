@@ -314,11 +314,20 @@ type QueueFunc[T any] func(param *T)
 
 type AtomicQueue[T any] struct {
 	poolChain
-	qw queueWait
+	qw    queueWait
+	wlock atomic.Bool
 }
 
 func (fq *AtomicQueue[T]) Push(m *T) {
+	var backoff uint32 = 1
+	for !fq.wlock.CompareAndSwap(false, true) {
+		pause(backoff)
+		if backoff < 64 {
+			backoff <<= 1
+		}
+	}
 	fq.poolChain.pushHead(unsafe.Pointer(m))
+	fq.wlock.Store(false)
 }
 
 func (fq *AtomicQueue[T]) BPush(m *T) {
