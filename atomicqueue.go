@@ -172,20 +172,23 @@ type poolChain struct {
 	// by the producer, so doesn't need to be synchronized.
 	head *poolChainElt
 
+	// bucket size
+	buckets uint
+
+	_ [128 - ((unsafe.Sizeof(&poolChainElt{}) + unsafe.Sizeof(uint(0))) % 128)]byte
+
 	// tail is the poolDequeue to popTail from. This is accessed
 	// by consumers, so reads and writes must be atomic.
 	tail atomic.Pointer[poolChainElt]
 
 	// sync.Pool
 	pool sync.Pool
-
-	// bucket size
-	buckets uint
 }
 
 type poolChainElt struct {
 	poolQueue
 
+	_ [128 - (unsafe.Sizeof(poolQueue{}) % 128)]byte
 	// next and prev link to the adjacent poolChainElts in this
 	// poolChain.
 	//
@@ -203,6 +206,8 @@ func (c *poolChain) newPoolChainElt() *poolChainElt {
 	var d *poolChainElt
 	if d_ := c.pool.Get(); d_ != nil {
 		d = d_.(*poolChainElt)
+		clear(d.vals)
+		d.headTail.Store(0)
 		d.next.Store(nil)
 		d.prev.Store(nil)
 	} else {
@@ -227,10 +232,16 @@ func (c *poolChain) pushHead(val unsafe.Pointer) {
 
 	// The current dequeue is full. Allocate a new one
 	d2 := c.newPoolChainElt()
+
+	// Fast-path setup for the new element before linking it to the chain.
+	// We can push to d2 non-atomically or safely here because it isn't visible to consumers yet.
+	d2.pushHead(val)
+
 	d2.prev.Store(d)
 	c.head = d2
+
+	// Store release barrier ensures d2 is fully initialized before consumers can traverse to it via d.next.
 	d.next.Store(d2)
-	d2.pushHead(unsafe.Pointer(val))
 }
 
 func (c *poolChain) popTail() (unsafe.Pointer, bool) {
@@ -249,7 +260,7 @@ func (c *poolChain) popTail() (unsafe.Pointer, bool) {
 		d2 := d.next.Load()
 
 		if val, ok := d.popTail(); ok {
-			return val, ok
+			return val, true
 		}
 
 		if d2 == nil {
