@@ -22,7 +22,7 @@ import (
 
 func TestAtomicQueue(t *testing.T) {
 	var arr [10]int
-	queue := NewAtomicPoolQueue[int](10)
+	queue := NewAtomicQueue[int](10)
 	for i := range 10 {
 		queue.Push(&arr[i])
 	}
@@ -33,7 +33,7 @@ func TestAtomicQueue(t *testing.T) {
 
 func TestAtomicChain(t *testing.T) {
 	var arr [1000]int
-	queue := NewAtomicPoolChain[int](8)
+	queue := NewAtomicChain[int](8)
 	for i := range 1000 {
 		queue.Push(&arr[i])
 	}

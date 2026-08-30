@@ -33,7 +33,6 @@ type poolQueue[T any] struct {
 	// that we can atomically add to it and the overflow is
 	// harmless.
 	headTail atomic.Uint64
-	_        [128]byte
 
 	// vals is a ring buffer of interface{} values stored in this
 	// dequeue. The size of this must be a power of 2.
@@ -288,14 +287,35 @@ func (c *poolChain[T]) empty() bool {
 	return d.empty()
 }
 
-type AtomicQueue[T any] struct {
-	poolQueue[T]
-	_     [128]byte
-	wlock atomic.Bool
-	_     [128]byte
+type queueWait struct {
+	wait atomic.Uint32
+	cond chan struct{}
 }
 
-//go:inline
+func (qw *queueWait) waitEvent() {
+	if qw.wait.CompareAndSwap(0, 1) {
+		<-qw.cond
+		qw.wait.Store(0)
+	}
+}
+
+func (qw *queueWait) signal() {
+	if qw.wait.Load() == 1 {
+		if qw.wait.CompareAndSwap(1, 0) {
+			select {
+			case qw.cond <- struct{}{}:
+			default:
+			}
+		}
+	}
+}
+
+type AtomicQueue[T any] struct {
+	poolQueue[T]
+	qw    queueWait
+	wlock atomic.Bool
+}
+
 func (fq *AtomicQueue[T]) Push(m *T) {
 	var backoff uint32 = 1
 	for !fq.TryPush(m) {
@@ -308,7 +328,6 @@ func (fq *AtomicQueue[T]) Push(m *T) {
 	}
 }
 
-//go:inline
 func (fq *AtomicQueue[T]) TryPush(m *T) bool {
 	var retrycnt int
 	var backoff uint32 = 1
@@ -329,12 +348,10 @@ retry:
 	return false
 }
 
-//go:inline
 func (fq *AtomicQueue[T]) Pop() (*T, bool) {
 	return fq.poolQueue.popTail()
 }
 
-//go:inline
 func (fq *AtomicQueue[T]) IsEmpty() bool {
 	return fq.poolQueue.empty()
 }
@@ -347,59 +364,29 @@ func NewAtomicQueue[T any](size uint) *AtomicQueue[T] {
 		poolQueue: poolQueue[T]{
 			vals: make([]unsafe.Pointer, size),
 		},
+		qw: queueWait{
+			cond: make(chan struct{}, 1),
+		},
 	}
 	return q
 }
 
 type AtomicPoolQueue[T any] struct {
 	AtomicQueue[T]
-	_    [128]byte
-	wait atomic.Uint32
-	_    [128]byte
-	cond chan struct{}
-	_    [128]byte
+	qw queueWait
 }
 
-func NewAtomicPoolQueue[T any](size uint) *AtomicPoolQueue[T] {
-	if bits.OnesCount(size) != 1 {
-		size = (1 << bits.Len(size))
-	}
-	q := &AtomicPoolQueue[T]{
-		AtomicQueue: AtomicQueue[T]{
-			poolQueue: poolQueue[T]{
-				vals: make([]unsafe.Pointer, size),
-			},
-		},
-		cond: make(chan struct{}, 1),
-	}
-	return q
+func (fq *AtomicQueue[T]) BPush(m *T) {
+	fq.Push(m)
+	fq.qw.signal()
 }
 
-func (fq *AtomicPoolQueue[T]) signal() {
-	if fq.wait.Load() == 1 {
-		if fq.wait.CompareAndSwap(1, 0) {
-			select {
-			case fq.cond <- struct{}{}:
-			default:
-			}
-		}
-	}
-}
+type QueueFunc[T any] func(param *T)
 
-func (fq *AtomicPoolQueue[T]) Push(m *T) {
-	fq.AtomicQueue.Push(m)
-	fq.signal()
-}
-
-type PoolQueueFunc[T any] func(param *T)
-
-func (fq *AtomicPoolQueue[T]) Consume(f PoolQueueFunc[T]) {
+func (fq *AtomicQueue[T]) Consume(f QueueFunc[T]) {
 	for {
 		if fq.IsEmpty() {
-			if fq.wait.CompareAndSwap(0, 1) {
-				<-fq.cond
-				fq.wait.Store(0)
-			}
+			fq.qw.waitEvent()
 		}
 		for v, ok := fq.Pop(); ok; v, ok = fq.Pop() {
 			if v == nil {
@@ -416,12 +403,10 @@ func (fq *AtomicPoolQueue[T]) Consume(f PoolQueueFunc[T]) {
 
 type AtomicChain[T any] struct {
 	poolChain[T]
-	_     [128]byte
+	qw    queueWait
 	wlock atomic.Bool
-	_     [128]byte
 }
 
-//go:inline
 func (fq *AtomicChain[T]) Push(m *T) {
 	var backoff uint32 = 1
 	for !fq.TryPush(m) {
@@ -434,7 +419,6 @@ func (fq *AtomicChain[T]) Push(m *T) {
 	}
 }
 
-//go:inline
 func (fq *AtomicChain[T]) TryPush(m *T) bool {
 	var retrycnt int
 	var backoff uint32 = 1
@@ -455,12 +439,10 @@ retry:
 	return false
 }
 
-//go:inline
 func (fq *AtomicChain[T]) Pop() (*T, bool) {
 	return fq.poolChain.popTail()
 }
 
-//go:inline
 func (fq *AtomicChain[T]) IsEmpty() bool {
 	return fq.poolChain.empty()
 }
@@ -471,55 +453,22 @@ func NewAtomicChain[T any](size uint) *AtomicChain[T] {
 	}
 	q := &AtomicChain[T]{
 		poolChain: poolChain[T]{buckets: size},
-	}
-	return q
-}
-
-type AtomicPoolChain[T any] struct {
-	AtomicChain[T]
-	_    [128]byte
-	wait atomic.Uint32
-	_    [128]byte
-	cond chan struct{}
-	_    [128]byte
-}
-
-func NewAtomicPoolChain[T any](size uint) *AtomicPoolChain[T] {
-	if bits.OnesCount(size) != 1 {
-		size = (1 << bits.Len(size))
-	}
-	q := &AtomicPoolChain[T]{
-		AtomicChain: AtomicChain[T]{
-			poolChain: poolChain[T]{buckets: size},
+		qw: queueWait{
+			cond: make(chan struct{}, 1),
 		},
-		cond: make(chan struct{}, 1),
 	}
 	return q
 }
 
-func (fq *AtomicPoolChain[T]) signal() {
-	if fq.wait.Load() == 1 {
-		if fq.wait.CompareAndSwap(1, 0) {
-			select {
-			case fq.cond <- struct{}{}:
-			default:
-			}
-		}
-	}
+func (fq *AtomicChain[T]) BPush(m *T) {
+	fq.Push(m)
+	fq.qw.signal()
 }
 
-func (fq *AtomicPoolChain[T]) Push(m *T) {
-	fq.AtomicChain.Push(m)
-	fq.signal()
-}
-
-func (fq *AtomicPoolChain[T]) Consume(f PoolQueueFunc[T]) {
+func (fq *AtomicChain[T]) Consume(f QueueFunc[T]) {
 	for {
 		if fq.IsEmpty() {
-			if fq.wait.CompareAndSwap(0, 1) {
-				<-fq.cond
-				fq.wait.Store(0)
-			}
+			fq.qw.waitEvent()
 		}
 		for v, ok := fq.Pop(); ok; v, ok = fq.Pop() {
 			if v == nil {
@@ -537,11 +486,7 @@ func (fq *AtomicPoolChain[T]) Consume(f PoolQueueFunc[T]) {
 type AtomicPriorityChain[T any] struct {
 	qhigh *AtomicChain[T]
 	qlow  *AtomicChain[T]
-	_     [128]byte
-	wait  atomic.Uint32
-	_     [128]byte
-	cond  chan struct{}
-	_     [128]byte
+	qw    queueWait
 }
 
 func NewAtomicPriorityChain[T any](size uint) *AtomicPriorityChain[T] {
@@ -555,20 +500,11 @@ func NewAtomicPriorityChain[T any](size uint) *AtomicPriorityChain[T] {
 		qlow: &AtomicChain[T]{
 			poolChain: poolChain[T]{buckets: size},
 		},
-		cond: make(chan struct{}, 1),
+		qw: queueWait{
+			cond: make(chan struct{}, 1),
+		},
 	}
 	return q
-}
-
-func (fq *AtomicPriorityChain[T]) signal() {
-	if fq.wait.Load() == 1 {
-		if fq.wait.CompareAndSwap(1, 0) {
-			select {
-			case fq.cond <- struct{}{}:
-			default:
-			}
-		}
-	}
 }
 
 func (fq *AtomicPriorityChain[T]) Push(m *T, hpri bool) {
@@ -577,7 +513,7 @@ func (fq *AtomicPriorityChain[T]) Push(m *T, hpri bool) {
 	} else {
 		fq.qlow.Push(m)
 	}
-	fq.signal()
+	fq.qw.signal()
 }
 
 func (fq *AtomicPriorityChain[T]) PopH() (*T, bool) {
@@ -598,19 +534,14 @@ func (fq *AtomicPriorityChain[T]) IsEmpty(hpri bool) bool {
 
 func (fq *AtomicPriorityChain[T]) Wait() {
 	if fq.IsEmpty(true) && fq.IsEmpty(false) {
-		if fq.wait.CompareAndSwap(0, 1) {
-			<-fq.cond
-		}
+		fq.qw.waitEvent()
 	}
 }
 
-func (fq *AtomicPriorityChain[T]) Consume(fh PoolQueueFunc[T], fl PoolQueueFunc[T]) {
+func (fq *AtomicPriorityChain[T]) Consume(fh QueueFunc[T], fl QueueFunc[T]) {
 	for {
 		if fq.IsEmpty(true) && fq.IsEmpty(false) {
-			if fq.wait.CompareAndSwap(0, 1) {
-				<-fq.cond
-				fq.wait.Store(0)
-			}
+			fq.qw.waitEvent()
 		}
 	retry:
 		for v, ok := fq.PopH(); ok; v, ok = fq.PopH() {
