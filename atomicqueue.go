@@ -385,6 +385,7 @@ func (fq *AtomicPoolQueue[T]) Consume(f PoolQueueFunc[T]) {
 		if fq.IsEmpty() {
 			if fq.wait.CompareAndSwap(0, 1) {
 				<-fq.cond
+				fq.wait.Store(0)
 			}
 		}
 		for v, ok := fq.Pop(); ok; v, ok = fq.Pop() {
@@ -495,6 +496,7 @@ func (fq *AtomicPoolChain[T]) Consume(f PoolQueueFunc[T]) {
 		if fq.IsEmpty() {
 			if fq.wait.CompareAndSwap(0, 1) {
 				<-fq.cond
+				fq.wait.Store(0)
 			}
 		}
 		for v, ok := fq.Pop(); ok; v, ok = fq.Pop() {
@@ -582,6 +584,7 @@ func (fq *AtomicPriorityChain[T]) Consume(fh PoolQueueFunc[T], fl PoolQueueFunc[
 		if fq.IsEmpty(true) && fq.IsEmpty(false) {
 			if fq.wait.CompareAndSwap(0, 1) {
 				<-fq.cond
+				fq.wait.Store(0)
 			}
 		}
 	retry:
