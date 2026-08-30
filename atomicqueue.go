@@ -371,11 +371,6 @@ func NewAtomicQueue[T any](size uint) *AtomicQueue[T] {
 	return q
 }
 
-type AtomicPoolQueue[T any] struct {
-	AtomicQueue[T]
-	qw queueWait
-}
-
 func (fq *AtomicQueue[T]) BPush(m *T) {
 	fq.Push(m)
 	fq.qw.signal()
