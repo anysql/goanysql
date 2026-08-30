@@ -324,9 +324,11 @@ func (qw *queueWait) signal() {
 type QueueFunc[T any] func(param *T)
 
 type AtomicQueue[T any] struct {
-	poolChain
-	qw    queueWait
 	wlock atomic.Bool
+	_     [128 - (unsafe.Sizeof(uint32(0)) % 128)]byte
+	poolChain
+	_  [128 - (unsafe.Sizeof(&poolChain{}) % 128)]byte
+	qw queueWait
 }
 
 func (fq *AtomicQueue[T]) Push(m *T) {
@@ -387,9 +389,11 @@ func (fq *AtomicQueue[T]) Consume(f QueueFunc[T]) {
 }
 
 type AtomicPriorityQueue[T any] struct {
-	qhigh *AtomicQueue[T]
-	qlow  *AtomicQueue[T]
 	qw    queueWait
+	_     [128 - (unsafe.Sizeof(&queueWait{}) % 128)]byte
+	qhigh *AtomicQueue[T]
+	_     [128 - (unsafe.Sizeof(&AtomicQueue[T]{}) % 128)]byte
+	qlow  *AtomicQueue[T]
 }
 
 func NewAtomicPriorityQueue[T any](size uint) *AtomicPriorityQueue[T] {
