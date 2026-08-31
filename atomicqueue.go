@@ -2,7 +2,6 @@ package goanysql
 
 import (
 	"math/bits"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -382,9 +381,11 @@ func (fq *AtomicQueue[T]) Consume(f QueueFunc[T]) {
 				f(v)
 			}
 		}
-		for range maxRetries {
-			runtime.Gosched()
-		}
+		/*
+			for range maxRetries {
+				runtime.Gosched()
+			}
+		*/
 	}
 }
 
@@ -468,8 +469,10 @@ func (fq *AtomicPriorityQueue[T]) Consume(fh QueueFunc[T], fl QueueFunc[T]) {
 			}
 			goto retry
 		}
-		for range maxRetries {
-			runtime.Gosched()
-		}
+		/*
+			for range maxRetries {
+				runtime.Gosched()
+			}
+		*/
 	}
 }
