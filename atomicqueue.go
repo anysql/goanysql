@@ -307,7 +307,7 @@ func (qw *queueWait) waitEvent() {
 }
 
 func (qw *queueWait) signal() {
-	if qw.wait.Swap(false) {
+	if qw.wait.Load() && qw.wait.Swap(false) {
 		select {
 		case qw.cond <- struct{}{}:
 		default:
