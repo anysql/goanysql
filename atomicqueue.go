@@ -217,6 +217,13 @@ func (c *poolChain) newPoolChainElt() *poolChainElt {
 }
 
 func (c *poolChain) pushHead(val unsafe.Pointer) {
+	if c.head != nil && c.head.pushHead(val) {
+		return
+	}
+	c.pushHeadSlow(val)
+}
+
+func (c *poolChain) pushHeadSlow(val unsafe.Pointer) {
 	d := c.head
 	if d == nil {
 		// Initialize the chain.
