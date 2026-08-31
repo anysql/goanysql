@@ -379,7 +379,7 @@ func (fq *AtomicQueue[T]) Consume(f QueueFunc[T]) {
 				f(v)
 			}
 		}
-		pause(maxRetries * 16)
+		runtime.Gosched()
 	}
 }
 
@@ -463,6 +463,6 @@ func (fq *AtomicPriorityQueue[T]) Consume(fh QueueFunc[T], fl QueueFunc[T]) {
 			}
 			goto retry
 		}
-		pause(maxRetries * 16)
+		runtime.Gosched()
 	}
 }
