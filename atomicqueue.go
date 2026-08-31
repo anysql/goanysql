@@ -296,24 +296,21 @@ func (c *poolChain) empty() bool {
 }
 
 type queueWait struct {
-	wait atomic.Uint32
+	wait atomic.Bool
 	cond chan struct{}
 }
 
 func (qw *queueWait) waitEvent() {
-	if qw.wait.CompareAndSwap(0, 1) {
-		<-qw.cond
-		qw.wait.Store(0)
-	}
+	qw.wait.Store(true)
+	<-qw.cond
+	qw.wait.Store(false)
 }
 
 func (qw *queueWait) signal() {
-	if qw.wait.Load() == 1 {
-		if qw.wait.CompareAndSwap(1, 0) {
-			select {
-			case qw.cond <- struct{}{}:
-			default:
-			}
+	if qw.wait.Swap(false) {
+		select {
+		case qw.cond <- struct{}{}:
+		default:
 		}
 	}
 }
