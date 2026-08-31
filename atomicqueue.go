@@ -7,7 +7,7 @@ import (
 	"unsafe"
 )
 
-const maxRetries = 5
+const maxRetries = 3
 
 // AtomicQueue is a lock-free fixed-size single-producer,
 // multi-consumer queue. The single producer can both push and pop
@@ -69,22 +69,13 @@ func procyield(cycles uint32)
 
 func pause(backoff uint32) {
 	procyield(backoff)
-	/*
-		for j := 0; j < backoff; j++ {
-			// runtime.Gosched() is too heavy here.
-			// In Go 1.24+, you can use clear spin loops or simple empty loops
-			// that the compiler optimizes for hardware pause instructions.
-			_ = j
-
-		}
-	*/
 }
 
 // pushHead adds val at the head of the queue. It returns false if the
 // queue is full. It must only be called by a single producer.
 func (d *poolQueue) pushHead(val unsafe.Pointer) bool {
 	var retrycnt int
-	var backoff uint32 = 1
+	var backoff uint32 = 8
 	ptrs := d.headTail.Load()
 	head, tail := d.unpack(ptrs)
 	if (tail+uint32(len(d.vals)))&(1<<dequeueBits-1) == head {
@@ -101,7 +92,7 @@ retry:
 		// Another goroutine is still cleaning up the tail, so
 		// the queue is actually still full.
 		if backoff < 64 {
-			backoff <<= 1
+			backoff += 16
 		}
 		if retrycnt < maxRetries {
 			retrycnt++
@@ -338,11 +329,11 @@ type AtomicQueue[T any] struct {
 }
 
 func (fq *AtomicQueue[T]) Push(m *T) {
-	var backoff uint32 = 1
-	for !fq.wlock.CompareAndSwap(false, true) {
+	var backoff uint32 = 8
+	for fq.wlock.Swap(true) {
 		pause(backoff)
 		if backoff < 64 {
-			backoff <<= 1
+			backoff += 16
 		}
 	}
 	fq.poolChain.pushHead(unsafe.Pointer(m))
