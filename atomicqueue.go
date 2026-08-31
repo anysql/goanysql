@@ -7,7 +7,7 @@ import (
 	"unsafe"
 )
 
-const maxRetries = 3
+const maxRetries = 5
 
 // AtomicQueue is a lock-free fixed-size single-producer,
 // multi-consumer queue. The single producer can both push and pop
@@ -381,11 +381,7 @@ func (fq *AtomicQueue[T]) Consume(f QueueFunc[T]) {
 				f(v)
 			}
 		}
-		/*
-			for range maxRetries {
-				runtime.Gosched()
-			}
-		*/
+		pause(maxRetries * 16)
 	}
 }
 
@@ -469,10 +465,6 @@ func (fq *AtomicPriorityQueue[T]) Consume(fh QueueFunc[T], fl QueueFunc[T]) {
 			}
 			goto retry
 		}
-		/*
-			for range maxRetries {
-				runtime.Gosched()
-			}
-		*/
+		pause(maxRetries * 16)
 	}
 }
