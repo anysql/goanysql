@@ -2,6 +2,7 @@ package goanysql
 
 import (
 	"math/bits"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -328,9 +329,11 @@ type AtomicQueue[T any] struct {
 func (fq *AtomicQueue[T]) Push(m *T) {
 	var backoff uint32 = 8
 	for fq.wlock.Swap(true) {
-		pause(backoff)
 		if backoff < 64 {
+			pause(backoff)
 			backoff += 16
+		} else {
+			runtime.Gosched()
 		}
 	}
 	fq.poolChain.pushHead(unsafe.Pointer(m))
