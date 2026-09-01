@@ -304,7 +304,6 @@ type queueWait struct {
 func (qw *queueWait) waitEvent() {
 	qw.wait.Store(true)
 	<-qw.cond
-	qw.wait.Store(false)
 }
 
 func (qw *queueWait) signal() {
