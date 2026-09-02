@@ -22,7 +22,7 @@ import (
 
 func TestMemPool(t *testing.T) {
 	buf := MemAlloc(100)
-	if cap(buf.data) != 128 {
+	if cap(buf.Data) != 128 {
 		t.Fatal("invalid memory capacity")
 	}
 	MemFree(buf)
@@ -30,7 +30,7 @@ func TestMemPool(t *testing.T) {
 
 func TestPagePool(t *testing.T) {
 	page := PageAlloc(100)
-	if cap(page.data) != 100*osPageSize {
+	if cap(page.Data) != 100*osPageSize {
 		t.Fatal("invalid memory capacity")
 	}
 	PageFree(page)

@@ -15,7 +15,7 @@ type memoryPool struct {
 }
 
 type ByteArray struct {
-	data []byte
+	Data []byte
 }
 
 var byteArrPool = &sync.Pool{New: func() any { return &ByteArray{} }}
@@ -45,28 +45,28 @@ func MemAlloc(size int) *ByteArray {
 		buckets++
 	}
 	if buckets < cap(memPool.slots) {
-		buf.data = unsafe.Slice(memPool.slots[buckets].Get().(*byte), buckets*memAllocSize)[:size]
+		buf.Data = unsafe.Slice(memPool.slots[buckets].Get().(*byte), buckets*memAllocSize)[:size]
 	} else {
-		buf.data = make([]byte, size)
+		buf.Data = make([]byte, size)
 	}
 	return buf
 }
 
 func MemFree(buf *ByteArray) {
-	if buf == nil || buf.data == nil {
+	if buf == nil || buf.Data == nil {
 		if buf != nil {
 			byteArrPool.Put(buf)
 		}
 		return
 	}
-	size := cap(buf.data)
+	size := cap(buf.Data)
 	if size&(memAllocSize-1) == 0 {
 		buckets := size / memAllocSize
 		if buckets < cap(memPool.slots) {
-			memPool.slots[buckets].Put(unsafe.SliceData(buf.data))
+			memPool.slots[buckets].Put(unsafe.SliceData(buf.Data))
 		}
 	}
-	buf.data = nil
+	buf.Data = nil
 	byteArrPool.Put(buf)
 }
 
@@ -78,27 +78,27 @@ func PageAlloc(pages int) *ByteArray {
 		return buf
 	}
 	if pages < cap(memPool.slots) {
-		buf.data = unsafe.Slice(pagePool.slots[pages].Get().(*byte), pages*osPageSize)[:pages*osPageSize]
+		buf.Data = unsafe.Slice(pagePool.slots[pages].Get().(*byte), pages*osPageSize)[:pages*osPageSize]
 	} else {
-		buf.data = make([]byte, osPageSize*pages)
+		buf.Data = make([]byte, osPageSize*pages)
 	}
 	return buf
 }
 
 func PageFree(buf *ByteArray) {
-	if buf == nil || buf.data == nil {
+	if buf == nil || buf.Data == nil {
 		if buf != nil {
 			byteArrPool.Put(buf)
 		}
 		return
 	}
-	size := cap(buf.data)
+	size := cap(buf.Data)
 	if size&(osPageSize-1) == 0 {
 		size = size / osPageSize
 		if size < cap(pagePool.slots) {
-			pagePool.slots[size].Put(unsafe.SliceData(buf.data))
+			pagePool.slots[size].Put(unsafe.SliceData(buf.Data))
 		}
 	}
-	buf.data = nil
+	buf.Data = nil
 	byteArrPool.Put(buf)
 }
