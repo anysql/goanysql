@@ -166,8 +166,6 @@ type poolChain struct {
 	// bucket size
 	buckets uint
 
-	_ [128 - ((unsafe.Sizeof(&poolChainElt{}) + unsafe.Sizeof(uint(0))) % 128)]byte
-
 	// tail is the poolDequeue to popTail from. This is accessed
 	// by consumers, so reads and writes must be atomic.
 	tail atomic.Pointer[poolChainElt]
@@ -179,7 +177,6 @@ type poolChain struct {
 type poolChainElt struct {
 	poolQueue
 
-	_ [128 - (unsafe.Sizeof(poolQueue{}) % 128)]byte
 	// next and prev link to the adjacent poolChainElts in this
 	// poolChain.
 	//
@@ -319,9 +316,7 @@ type QueueFunc[T any] func(param *T)
 
 type AtomicQueue[T any] struct {
 	wlock atomic.Bool
-	_     [128 - (unsafe.Sizeof(uint32(0)) % 128)]byte
 	poolChain
-	_  [128 - (unsafe.Sizeof(&poolChain{}) % 128)]byte
 	qw queueWait
 }
 
@@ -384,9 +379,7 @@ func (fq *AtomicQueue[T]) Consume(f QueueFunc[T]) {
 
 type AtomicPriorityQueue[T any] struct {
 	qw    queueWait
-	_     [128 - (unsafe.Sizeof(&queueWait{}) % 128)]byte
 	qhigh *AtomicQueue[T]
-	_     [128 - (unsafe.Sizeof(&AtomicQueue[T]{}) % 128)]byte
 	qlow  *AtomicQueue[T]
 }
 
