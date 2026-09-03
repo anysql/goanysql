@@ -287,10 +287,7 @@ func (c *poolChain) popTail() (unsafe.Pointer, bool) {
 
 func (c *poolChain) empty() bool {
 	d := c.tail.Load()
-	if d == nil {
-		return true
-	}
-	return d.empty()
+	return d == nil || (d.empty() && d.next.Load() == nil)
 }
 
 type queueWait struct {
