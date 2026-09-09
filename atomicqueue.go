@@ -455,3 +455,74 @@ func (fq *AtomicPriorityQueue[T]) Consume(fh QueueFunc[T], fl QueueFunc[T]) {
 		runtime.Gosched()
 	}
 }
+
+type AtomicArray[T any] struct {
+	wlock atomic.Bool
+	poolQueue
+	qw queueWait
+}
+
+func (fq *AtomicArray[T]) Push(m *T) {
+	var backoff uint32 = 8
+	for fq.wlock.Swap(true) {
+		if backoff < 64 {
+			pause(backoff)
+			backoff += 16
+		} else {
+			runtime.Gosched()
+		}
+	}
+	defer fq.wlock.Store(false)
+	backoff = 8
+	for !fq.poolQueue.pushHead(unsafe.Pointer(m)) {
+		if backoff < 64 {
+			pause(backoff)
+			backoff += 16
+		} else {
+			runtime.Gosched()
+		}
+	}
+}
+
+func (fq *AtomicArray[T]) BPush(m *T) {
+	fq.Push(m)
+	fq.qw.signal()
+}
+
+func (fq *AtomicArray[T]) Pop() (*T, bool) {
+	v, ok := fq.poolQueue.popTail()
+	return (*T)(v), ok
+}
+
+func (fq *AtomicArray[T]) IsEmpty() bool {
+	return fq.poolQueue.empty()
+}
+
+func NewAtomicArray[T any](size uint) *AtomicArray[T] {
+	if bits.OnesCount(size) != 1 {
+		size = (1 << bits.Len(size))
+	}
+	q := &AtomicArray[T]{
+		poolQueue: poolQueue{vals: make([]unsafe.Pointer, size)},
+		qw: queueWait{
+			cond: make(chan struct{}, 1),
+		},
+	}
+	return q
+}
+
+func (fq *AtomicArray[T]) Consume(f QueueFunc[T]) {
+	for {
+		if fq.IsEmpty() {
+			fq.qw.waitEvent()
+		}
+		for v, ok := fq.Pop(); ok; v, ok = fq.Pop() {
+			if v == nil {
+				return
+			} else {
+				f(v)
+			}
+		}
+		runtime.Gosched()
+	}
+}

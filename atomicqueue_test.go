@@ -42,3 +42,14 @@ func TestAtomicPriority(t *testing.T) {
 		queue.PopL()
 	}
 }
+
+func TestAtomicArray(t *testing.T) {
+	var arr [10]int
+	queue := NewAtomicArray[int](10)
+	for i := range 10 {
+		queue.Push(&arr[i])
+	}
+	for range 10 {
+		queue.Pop()
+	}
+}
