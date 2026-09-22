@@ -104,7 +104,7 @@ def get_val_ptr(val):
     return str(val)+"K"
 
 def get_color_pct(pct, pstr):
-    if pct < 0.1:
+    if pct < 0.05:
         return GREEN+pstr+RESET
     if pct < 1.0:
         return YELLOW+pstr+RESET
@@ -118,8 +118,8 @@ def get_pct_str(delta, base):
     return get_color_pct(pct, pstr)
 
 def get_jiltertime(val, hz):
-    tim = (1 * val)/ hz
-    return f"{tim:.3f}"[0:4]
+    tim = (1 * val) / hz
+    return f"{tim:.3f}"[0:4].removesuffix(".")
 
 def main():
     parser = argparse.ArgumentParser(
