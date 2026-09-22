@@ -3,6 +3,11 @@ import os
 import argparse
 #import psutil
 
+RED = "\033[31m"
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+RESET = "\033[0m"
+
 def parse_tcp_proc_file(filepath):
     """Parses a /proc/net/tcp file and yields (send_q, recv_q, st, tr, tr->when) for each connection."""
     if not os.path.exists(filepath):
@@ -98,11 +103,19 @@ def get_val_ptr(val):
     val = int(val / 1000)
     return str(val)+"K"
 
+def get_color_pct(pct, pstr):
+    if pct < 0.1:
+        return GREEN+pstr+RESET
+    if pct < 1.0:
+        return YELLOW+pstr+RESET
+    return RED+pstr+RESET
+
 def get_pct_str(delta, base):
     if base == 0:
         return "0.000"
     pct = (delta / base) * 100
-    return f"{pct:.3f}"[0:5]
+    pstr = f"{pct:.3f}"[0:5]
+    return get_color_pct(pct, pstr)
 
 def get_jiltertime(val, hz):
     tim = (1 * val)/ hz
