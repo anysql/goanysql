@@ -110,7 +110,7 @@ def get_val_ptr(val):
     return str(val)+"K"
 
 def get_color_pct(pct, pstr):
-    if pct < 0.5:
+    if pct < 0.1:
         return GREEN+pstr+RESET
     if pct < 1.0:
         return YELLOW+pstr+RESET
