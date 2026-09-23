@@ -12,7 +12,7 @@ RESET = "\033[0m"
 def getlocalip():
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
-    return ".".join(local_ip.split(".")[-2:])
+    return ".".join(local_ip.split(".")[-3:])
 
 def parse_tcp_proc_file(filepath):
     """Parses a /proc/net/tcp file and yields (send_q, recv_q, st, tr, tr->when) for each connection."""
@@ -147,8 +147,8 @@ def main():
     print(f"Starting TCP Quality Monitor (Interval: {args.interval}s)...")
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
-    header_fmt = "{:<19} | {:7}| {:<3} | {:<3} | {:<6} | {:<4} | {:<4} | {:<4} | {:<8} | {:<8} | {:<6} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4}"
-    row_fmt    = "{:<19} | {:<7}| {:<3d} | {:<3d} | {:<6d} | {:<4} | {:<4} | {:<4} | {:<8} | {:<8} | {:<6} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4}"
+    header_fmt = "{:<19} | {:11}| {:<3} | {:<3} | {:<6} | {:<4} | {:<4} | {:<4} | {:<8} | {:<8} | {:<6} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4}"
+    row_fmt    = "{:<19} | {:<11}| {:<3d} | {:<3d} | {:<6d} | {:<4} | {:<4} | {:<4} | {:<8} | {:<8} | {:<6} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4}"
 
     proc_files = {
         'IPv4 TCP': '/proc/net/tcp',
@@ -196,7 +196,7 @@ def main():
                 print(header_fmt.format(
                     timestamp, "IP", "RX‰", "TX‰", "Total", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs", "Retr", "Retr%", "Fail", "Fail%", "TimO", "TimO%", "Drop", "Drop%", "OfoR", "OfoR%", "OfoT", "OfoT%", "Zero"
                 ))
-                print("-" * 192)
+                print("-" * 196)
             rows = rows + 1
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
