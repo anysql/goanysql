@@ -1,12 +1,18 @@
 import time
 import os
 import argparse
+import socket
 #import psutil
 
 RED = "\033[31m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
 RESET = "\033[0m"
+
+def getlocalip():
+    hostname = socket.gethostname()
+    local_ip = socket.gethostbyname(hostname)
+    return ".".join(local_ip.split(".")[-2:])
 
 def parse_tcp_proc_file(filepath):
     """Parses a /proc/net/tcp file and yields (send_q, recv_q, st, tr, tr->when) for each connection."""
@@ -104,7 +110,7 @@ def get_val_ptr(val):
     return str(val)+"K"
 
 def get_color_pct(pct, pstr):
-    if pct < 0.05:
+    if pct < 0.5:
         return GREEN+pstr+RESET
     if pct < 1.0:
         return YELLOW+pstr+RESET
@@ -136,12 +142,13 @@ def main():
     args = parser.parse_args()
 
     rows = 0
+    localip = getlocalip()
     cpuhz = os.sysconf(os.sysconf_names['SC_CLK_TCK'])
     print(f"Starting TCP Quality Monitor (Interval: {args.interval}s)...")
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
-    header_fmt = "{:<19} | {:<3} | {:<3} | {:<6} | {:<4} | {:<4} | {:<4} | {:<8} | {:<8} | {:<6} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4}"
-    row_fmt    = "{:<19} | {:<3d} | {:<3d} | {:<6d} | {:<4} | {:<4} | {:<4} | {:<8} | {:<8} | {:<6} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4}"
+    header_fmt = "{:<19} | {:7}| {:<3} | {:<3} | {:<6} | {:<4} | {:<4} | {:<4} | {:<8} | {:<8} | {:<6} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4}"
+    row_fmt    = "{:<19} | {:<7}| {:<3d} | {:<3d} | {:<6d} | {:<4} | {:<4} | {:<4} | {:<8} | {:<8} | {:<6} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4}"
 
     proc_files = {
         'IPv4 TCP': '/proc/net/tcp',
@@ -187,9 +194,9 @@ def main():
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             if rows % 20 == 0:
                 print(header_fmt.format(
-                    timestamp, "RX‰", "TX‰", "Total", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs", "Retr", "Retr%", "Fail", "Fail%", "TimO", "TimO%", "Drop", "Drop%", "OfoR", "OfoR%", "OfoT", "OfoT%", "Zero"
+                    timestamp, "IP", "RX‰", "TX‰", "Total", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs", "Retr", "Retr%", "Fail", "Fail%", "TimO", "TimO%", "Drop", "Drop%", "OfoR", "OfoR%", "OfoT", "OfoT%", "Zero"
                 ))
-                print("-" * 182)
+                print("-" * 192)
             rows = rows + 1
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
@@ -241,7 +248,7 @@ def main():
 
             #timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             print(row_fmt.format(
-                timestamp,
+                timestamp, localip,
                 int(1000 * non_zero_recv / (total_tcp_conns + 1)),
                 int(1000 * non_zero_send / (total_tcp_conns + 1)), total_tcp_conns,
                 get_jiltertime(trans_wait_time, cpuhz),
