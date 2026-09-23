@@ -2,6 +2,7 @@ import time
 import os
 import argparse
 import socket
+import re
 #import psutil
 
 RED = "\033[31m"
@@ -11,8 +12,16 @@ RESET = "\033[0m"
 
 def getlocalip():
     hostname = socket.gethostname()
-    local_ip = socket.gethostbyname(hostname)
-    return ".".join(local_ip.split(".")[-3:])
+    match = re.search(r'(\d{1,3})-(\d{1,3})-(\d{1,3})-(\d{1,3})$', hostname)
+    if match:
+        local_ip = ".".join(match.groups())
+        return ".".join(local_ip.split(".")[1:4])
+    else:
+        try:
+            local_ip = socket.gethostbyname(hostname)
+            return ".".join(local_ip.split(".")[1:4])
+        except socket.gaierror:
+            return "Unknown"
 
 def parse_tcp_proc_file(filepath):
     """Parses a /proc/net/tcp file and yields (send_q, recv_q, st, tr, tr->when) for each connection."""
