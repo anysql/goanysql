@@ -3,6 +3,8 @@ import os
 import argparse
 import socket
 import re
+import struct
+import fcntl
 #import psutil
 
 RED = "\033[31m"
@@ -22,6 +24,58 @@ def getlocalip():
             return ".".join(local_ip.split(".")[1:4])
         except socket.gaierror:
             return "Unknown"
+
+def get_traffic_ip():
+    highest_iface = None
+    max_bytes = -1
+
+    # 1. Find the interface with the highest historical traffic (RX + TX bytes)
+    try:
+        with open("/proc/net/dev", "r") as f:
+            lines = f.readlines()[2:]  # Skip the two header lines
+
+        for line in lines:
+            if not line.strip():
+                continue
+            parts = line.split()
+            iface = parts[0].strip(":")
+
+            # Skip loopback interface
+            if iface.lower() in ["lo", "loopback"]:
+                continue
+
+            if iface.lower().startswith("docker"):
+                continue
+
+            # RX bytes is index 1, TX bytes is index 9
+            rx_bytes = int(parts[1])
+            tx_bytes = int(parts[9])
+            total_bytes = rx_bytes + tx_bytes
+
+            if total_bytes > max_bytes:
+                max_bytes = total_bytes
+                highest_iface = iface
+    except FileNotFoundError:
+        return getlocalip()
+
+    if not highest_iface:
+        return getlocalip()
+
+    # 2. Get the IPv4 address of the selected interface using standard system calls (ioctl)
+    ip_address = ""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # SIOCGIFADDR constant code is 0x8915 to query IP from interface name
+        # Pack the interface name into a 32-byte C-struct buffer
+        iface_pack = struct.pack('256s', highest_iface.encode('utf-8')[:15])
+        packed_ip = fcntl.ioctl(s.fileno(), 0x8915, iface_pack)[20:24]
+        ip_address = socket.inet_ntoa(packed_ip)
+        ip_address = ".".join(ip_address.split(".")[1:4])
+    except Exception:
+        ip_address = getlocalip()
+        pass # Fallback if interface does not have an IP address configured
+
+    return ip_address
 
 def parse_tcp_proc_file(filepath):
     """Parses a /proc/net/tcp file and yields (send_q, recv_q, st, tr, tr->when) for each connection."""
@@ -151,7 +205,7 @@ def main():
     args = parser.parse_args()
 
     rows = 0
-    localip = getlocalip()
+    localip = get_traffic_ip()
     cpuhz = os.sysconf(os.sysconf_names['SC_CLK_TCK'])
     print(f"Starting TCP Quality Monitor (Interval: {args.interval}s)...")
 
