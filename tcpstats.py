@@ -148,6 +148,21 @@ def read_metrics():
     except FileNotFoundError:
         pass
 
+    total_time_squeeze = 0
+    try:
+        with open("/proc/net/softnet_stat", 'r') as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 3:
+                    # 第二列：dropped
+                    # total_dropped += int(parts[1], 16)
+                    # 第三列：time_squeeze
+                    total_time_squeeze += int(parts[2], 16)
+    except FileNotFoundError:
+        # 若非 Linux 系統或路徑不對，返回 0, 0 或拋出異常
+        pass
+    metrics["TimeSqueeze"] = total_time_squeeze
+
     # Automatically fetches and iterates through all available interfaces
     nic_rx_drop = 0
     nic_tx_drop = 0
@@ -210,8 +225,8 @@ def main():
     print(f"Starting TCP Quality Monitor (Interval: {args.interval}s)...")
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
-    header_fmt = "{:<19} | {:11}| {:<3} | {:<3} | {:<6} | {:<4} | {:<4} | {:<4} | {:<8} | {:<8} | {:<6} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4}"
-    row_fmt    = "{:<19} | {:<11}| {:<3d} | {:<3d} | {:<6d} | {:<4} | {:<4} | {:<4} | {:<8} | {:<8} | {:<6} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4}"
+    header_fmt = "{:<19} | {:11}| {:<3} | {:<3} | {:<3} | {:<6} | {:<4} | {:<4} | {:<4} | {:<8} | {:<8} | {:<6} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4}"
+    row_fmt    = "{:<19} | {:<11}| {:<3d} | {:<3d} | {:<3d} | {:<6d} | {:<4} | {:<4} | {:<4} | {:<8} | {:<8} | {:<6} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4}"
 
     proc_files = {
         'IPv4 TCP': '/proc/net/tcp',
@@ -257,9 +272,9 @@ def main():
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             if rows % 20 == 0:
                 print(header_fmt.format(
-                    timestamp, "IP", "RX‰", "TX‰", "Total", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs", "Retr", "Retr%", "Fail", "Fail%", "TimO", "TimO%", "Drop", "Drop%", "OfoR", "OfoR%", "OfoT", "OfoT%", "Zero"
+                    timestamp, "IP", "Irq", "RX‰", "TX‰", "Total", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs", "Retr", "Retr%", "Fail", "Fail%", "TimO", "TimO%", "Drop", "Drop%", "OfoR", "OfoR%", "OfoT", "OfoT%", "Zero"
                 ))
-                print("-" * 196)
+                print("-" * 202)
             rows = rows + 1
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
@@ -267,6 +282,7 @@ def main():
             retrans_delta = get_delta(curr["RetransSegs"], prev["RetransSegs"])
             rx_drop_delta = get_delta(curr["NICRxDrops"], prev["NICRxDrops"])
             tx_drop_delta = get_delta(curr["NICTxDrops"], prev["NICTxDrops"])
+            time_squeeze = get_delta(curr["TimeSqueeze"], prev["TimeSqueeze"])
 
             tcp_ext_curr = curr["TcpExt"]
             tcp_ext_prev = prev["TcpExt"]
@@ -311,7 +327,7 @@ def main():
 
             #timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             print(row_fmt.format(
-                timestamp, localip,
+                timestamp, localip, time_squeeze, 
                 int(1000 * non_zero_recv / (total_tcp_conns + 1)),
                 int(1000 * non_zero_send / (total_tcp_conns + 1)), total_tcp_conns,
                 get_jiltertime(trans_wait_time, cpuhz),
