@@ -198,12 +198,12 @@ def get_pct_str(delta, base):
     if base == 0:
         return "0.00"
     pct = (delta / base) * 10000
-    pstr = f"{pct:.2f}"[0:4].removesuffix(".")
+    pstr = f"{pct:.2f}"[0:4]
     return get_color_pct(pct, pstr)
 
 def get_jiltertime(val, hz):
     tim = (1 * val) / hz
-    return f"{tim:.3f}"[0:4].removesuffix(".")
+    return f"{tim:.3f}"[0:4]
 
 def main():
     parser = argparse.ArgumentParser(
@@ -225,8 +225,8 @@ def main():
     print(f"Starting TCP Quality Monitor (Interval: {args.interval}s)...")
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
-    header_fmt = "{:<19} | {:11}| {:>3} | {:>3} {:>3} {:>6} | {:>4} {:>4} {:>4} | {:>7} {:>7} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4}"
-    row_fmt    = "{:<19} | {:<11}| {:>3d} | {:>3d} {:>3d} {:>6d} | {:>4} {:>4} {:>4} | {:>7} {:>7} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4}"
+    header_fmt = "{:<19} | {:11}| {:>3} | {:>3} {:>3} {:>6} | {:>4} {:>4} {:>4} | {:>7} {:>7} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
+    row_fmt    = "{:<19} | {:<11}| {:>3d} | {:>3d} {:>3d} {:>6d} | {:>4} {:>4} {:>4} | {:>7} {:>7} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
 
     proc_files = {
         'IPv4 TCP': '/proc/net/tcp',
@@ -272,9 +272,10 @@ def main():
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             if rows % 20 == 0:
                 print(header_fmt.format(
-                    timestamp, "IP", "Irq", "RX‰", "TX‰", "Total", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs", "Retr", "Pct‱", "Fail", "Pct‱", "TimO", "Pct‱", "Drop", "Pct‱", "OfoR", "Pct‱", "OfoT", "Pct‱", "Zero"
+                    timestamp, "IP", "Irq", "RX‰", "TX‰", "Total", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs", "Retr", "Pct‱",
+                    "Fail", "Pct‱", "TimO", "Pct‱", "Drop", "Pct‱", "OfoR", "Pct‱", "OfoT", "Pct‱", "Zero", "ZWnt"
                 ))
-                print("-" * 170)
+                print("-" * 174)
             rows = rows + 1
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
@@ -341,7 +342,8 @@ def main():
                 get_val_ptr(int(total_indrop/args.interval)), get_pct_str(total_indrop, in_delta),
                 get_val_ptr(int(ofo_queue/args.interval)), get_pct_str(ofo_queue, in_delta),
                 get_val_ptr(int(sack_reorder/args.interval)), get_pct_str(sack_reorder, out_delta),
-                get_val_ptr(int((to_zero_win + from_zero_win + want_zero_win)/args.interval))
+                get_val_ptr(int((to_zero_win + from_zero_win)/args.interval)),
+                get_val_ptr(int(want_zero_win/args.interval))
             ))
 
             prev = curr
