@@ -144,6 +144,8 @@ def read_metrics():
                     metrics["InSegs"] = int(snmp_dict.get("InSegs", 0))
                     metrics["OutSegs"] = int(snmp_dict.get("OutSegs", 0))
                     metrics["RetransSegs"] = int(snmp_dict.get("RetransSegs", 0))
+                    metrics["ActiveOpens"] = int(snmp_dict.get("ActiveOpens", 0))
+                    metrics["PassiveOpens"] = int(snmp_dict.get("PassiveOpens", 0))
                     break
     except FileNotFoundError:
         pass
@@ -225,8 +227,8 @@ def main():
     print(f"Starting TCP Quality Monitor (Interval: {args.interval}s)...")
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
-    header_fmt = "{:<19} | {:11}| {:>3} | {:>3} {:>3} {:>6} | {:>4} {:>4} {:>4} | {:>7} {:>7} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
-    row_fmt    = "{:<19} | {:<11}| {:>3d} | {:>3d} {:>3d} {:>6d} | {:>4} {:>4} {:>4} | {:>7} {:>7} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
+    header_fmt = "{:<19} | {:11}| {:>4} {:>4} {:>4} | {:>3} {:>3} {:>5} | {:>4} {:>4} {:>4} | {:>7} {:>7} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
+    row_fmt    = "{:<19} | {:<11}| {:>4} {:>4} {:>4} | {:>3d} {:>3d} {:>5} | {:>4} {:>4} {:>4} | {:>7} {:>7} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
 
     proc_files = {
         'IPv4 TCP': '/proc/net/tcp',
@@ -272,10 +274,10 @@ def main():
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             if rows % 20 == 0:
                 print(header_fmt.format(
-                    timestamp, "IP", "Irq", "RX‰", "TX‰", "Total", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs", "Retr", "Pct‱",
+                    timestamp, "IP", "Irq", "Conn", "Acpt", "RX‰", "TX‰", "Total", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs", "Retr", "Pct‱",
                     "Fail", "Pct‱", "TimO", "Pct‱", "Drop", "Pct‱", "OfoR", "Pct‱", "OfoT", "Pct‱", "Zero", "ZWnt"
                 ))
-                print("-" * 174)
+                print("-" * 184)
             rows = rows + 1
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
@@ -283,7 +285,9 @@ def main():
             retrans_delta = get_delta(curr["RetransSegs"], prev["RetransSegs"])
             rx_drop_delta = get_delta(curr["NICRxDrops"], prev["NICRxDrops"])
             tx_drop_delta = get_delta(curr["NICTxDrops"], prev["NICTxDrops"])
-            time_squeeze = get_delta(curr["TimeSqueeze"], prev["TimeSqueeze"])
+            time_squeeze  = get_delta(curr["TimeSqueeze"], prev["TimeSqueeze"])
+            active_opens  = get_delta(curr["ActiveOpens"], prev["ActiveOpens"])
+            passive_opens = get_delta(curr["PassiveOpens"], prev["PassiveOpens"])
 
             tcp_ext_curr = curr["TcpExt"]
             tcp_ext_prev = prev["TcpExt"]
@@ -328,9 +332,13 @@ def main():
 
             #timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             print(row_fmt.format(
-                timestamp, localip, time_squeeze, 
+                timestamp, localip, 
+                get_val_ptr(int(time_squeeze/args.interval)),
+                get_val_ptr(int(active_opens/args.interval)), 
+                get_val_ptr(int(passive_opens/args.interval)),
                 int(1000 * non_zero_recv / (total_tcp_conns + 1)),
-                int(1000 * non_zero_send / (total_tcp_conns + 1)), total_tcp_conns,
+                int(1000 * non_zero_send / (total_tcp_conns + 1)),
+                get_val_ptr(total_tcp_conns),
                 get_jiltertime(trans_wait_time, cpuhz),
                 get_jiltertime(trans_wait_maxt, cpuhz),
                 get_jiltertime(probe_wait_time, cpuhz),
