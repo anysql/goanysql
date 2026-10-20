@@ -188,17 +188,17 @@ def get_val_ptr(val):
     return str(val)+"K"
 
 def get_color_pct(pct, pstr):
-    if pct < 0.1:
+    if pct < 10.0:
         return GREEN+pstr+RESET
-    if pct < 1.0:
+    if pct < 100.0:
         return YELLOW+pstr+RESET
     return RED+pstr+RESET
 
 def get_pct_str(delta, base):
     if base == 0:
-        return "0.000"
-    pct = (delta / base) * 100
-    pstr = f"{pct:.3f}"[0:5]
+        return "0.00"
+    pct = (delta / base) * 10000
+    pstr = f"{pct:.2f}"[0:4]
     return get_color_pct(pct, pstr)
 
 def get_jiltertime(val, hz):
@@ -225,8 +225,8 @@ def main():
     print(f"Starting TCP Quality Monitor (Interval: {args.interval}s)...")
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
-    header_fmt = "{:<19} | {:11}| {:<3} | {:<3} | {:<3} | {:<6} | {:<4} | {:<4} | {:<4} | {:<8} | {:<8} | {:<6} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4}"
-    row_fmt    = "{:<19} | {:<11}| {:<3d} | {:<3d} | {:<3d} | {:<6d} | {:<4} | {:<4} | {:<4} | {:<8} | {:<8} | {:<6} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4} | {:<5} | {:<4}"
+    header_fmt = "{:<19} | {:11}| {:<3} | {:<3} | {:<3} | {:<6} | {:<4} | {:<4} | {:<4} | {:<7} | {:<7} | {:<6} | {:<4} | {:<4} | {:<4} | {:<4} | {:<4} | {:<4} | {:<4} | {:<4} | {:<4} | {:<4} | {:<4} | {:<4}"
+    row_fmt    = "{:<19} | {:<11}| {:<3d} | {:<3d} | {:<3d} | {:<6d} | {:<4} | {:<4} | {:<4} | {:<7} | {:<7} | {:<6} | {:<4} | {:<4} | {:<4} | {:<4} | {:<4} | {:<4} | {:<4} | {:<4} | {:<4} | {:<4} | {:<4} | {:<4}"
 
     proc_files = {
         'IPv4 TCP': '/proc/net/tcp',
@@ -272,9 +272,9 @@ def main():
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             if rows % 20 == 0:
                 print(header_fmt.format(
-                    timestamp, "IP", "Irq", "RX‰", "TX‰", "Total", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs", "Retr", "Retr%", "Fail", "Fail%", "TimO", "TimO%", "Drop", "Drop%", "OfoR", "OfoR%", "OfoT", "OfoT%", "Zero"
+                    timestamp, "IP", "Irq", "RX‰", "TX‰", "Total", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs", "Retr", "Rtr‱", "Fail", "Fal‱", "TimO", "Tmo‱", "Drop", "Drp‱", "OfoR", "OfR‱", "OfoT", "OfT‱", "Zero"
                 ))
-                print("-" * 202)
+                print("-" * 194)
             rows = rows + 1
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
