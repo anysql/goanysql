@@ -245,8 +245,8 @@ def main():
     print(f"Starting TCP Quality Monitor (Interval: {args.interval}s)...")
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
-    header_fmt = "{:<19} | {:11}| {:>2} {:>4} {:>4} {:>4} | {:>3} {:>3} {:>5} | {:>4} {:>4} {:>4} | {:>7} {:>7} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
-    row_fmt    = "{:<19} | {:<11}| {:>2d} {:>4} {:>4} {:>4} | {:>3d} {:>3d} {:>5} | {:>4} {:>4} {:>4} | {:>7} {:>7} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
+    header_fmt = "{:<19} | {:11}| {:>2} {:>4} {:>4} {:>4} | {:>3} {:>3} {:>4} {:>5} | {:>4} {:>4} {:>4} | {:>7} {:>7} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
+    row_fmt    = "{:<19} | {:<11}| {:>2d} {:>4} {:>4} {:>4} | {:>3d} {:>3d} {:>4} {:>5} | {:>4} {:>4} {:>4} | {:>7} {:>7} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
 
     proc_files = {
         'IPv4 TCP': '/proc/net/tcp',
@@ -267,6 +267,7 @@ def main():
             non_zero_recv = 0
             non_zero_send = 0
             total_tcp_conns = 0
+            time_wait_conns = 0
             trans_wait_time = 0
             probe_wait_time = 0
             trans_wait_maxt = 0
@@ -275,6 +276,8 @@ def main():
                 file_send = 0
                 for send_q, recv_q, st, tr, tm in parse_tcp_proc_file(filepath):
                     if st != 1 or tr == 3:
+                        if tr == 3:
+                            time_wait_conns += 1
                         continue
                     if recv_q > 0:
                         file_recv += 1
@@ -292,10 +295,10 @@ def main():
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             if rows % 20 == 0:
                 print(header_fmt.format(
-                    timestamp, "IP", "Id", "Irq", "Conn", "Acpt", "RX‰", "TX‰", "Total", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs", "Retr", "Pct‱",
+                    timestamp, "IP", "Id", "Irq", "Conn", "Acpt", "RX‰", "TX‰", "TWat", "Total", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs", "Retr", "Pct‱",
                     "Fail", "Pct‱", "TimO", "Pct‱", "Drop", "Pct‱", "OfoR", "Pct‱", "OfoT", "Pct‱", "Zero", "ZWnt"
                 ))
-                print("-" * 187)
+                print("-" * 192)
             rows = rows + 1
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
@@ -359,7 +362,7 @@ def main():
                 get_val_ptr(int(passive_opens/args.interval)),
                 int(1000 * non_zero_recv / (total_tcp_conns + 1)),
                 int(1000 * non_zero_send / (total_tcp_conns + 1)),
-                get_val_ptr(total_tcp_conns),
+                get_val_ptr(time_wait_conns), get_val_ptr(total_tcp_conns),
                 get_jiltertime(trans_wait_time, cpuhz),
                 get_jiltertime(trans_wait_maxt, cpuhz),
                 get_jiltertime(probe_wait_time, cpuhz),
