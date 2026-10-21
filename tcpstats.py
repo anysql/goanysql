@@ -165,6 +165,24 @@ def read_metrics():
         pass
     metrics["TimeSqueeze"] = total_time_squeeze
 
+    total_cpu_time = 0
+    idle_cpu_time = 0
+    try:
+        with open('/proc/stat', 'r') as f:
+            for line in f:
+                if line.startswith('cpu '):
+                    # Split fields and convert to integers, skipping the string label 'cpu'
+                    fields = [int(x) for x in line.split()[1:]]
+                    # In /proc/stat columns:
+                    # 0:user, 1:nice, 2:system, 3:idle, 4:iowait, 5:irq, 6:softirq, 7:steal...
+                    idle_cpu_time = fields[3] + fields[4] # idle + iowait
+                    total_cpu_time = sum(fields)
+                    break
+    except FileNotFoundError:
+        pass
+    metrics["TotalCPUTime"] = total_cpu_time
+    metrics["IdleCPUTime"] = idle_cpu_time
+
     # Automatically fetches and iterates through all available interfaces
     nic_rx_drop = 0
     nic_tx_drop = 0
@@ -227,8 +245,8 @@ def main():
     print(f"Starting TCP Quality Monitor (Interval: {args.interval}s)...")
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
-    header_fmt = "{:<19} | {:11}| {:>4} {:>4} {:>4} | {:>3} {:>3} {:>5} | {:>4} {:>4} {:>4} | {:>7} {:>7} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
-    row_fmt    = "{:<19} | {:<11}| {:>4} {:>4} {:>4} | {:>3d} {:>3d} {:>5} | {:>4} {:>4} {:>4} | {:>7} {:>7} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
+    header_fmt = "{:<19} | {:11}| {:>2} {:>4} {:>4} {:>4} | {:>3} {:>3} {:>5} | {:>4} {:>4} {:>4} | {:>7} {:>7} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
+    row_fmt    = "{:<19} | {:<11}| {:>2d} {:>4} {:>4} {:>4} | {:>3d} {:>3d} {:>5} | {:>4} {:>4} {:>4} | {:>7} {:>7} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
 
     proc_files = {
         'IPv4 TCP': '/proc/net/tcp',
@@ -274,10 +292,10 @@ def main():
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             if rows % 20 == 0:
                 print(header_fmt.format(
-                    timestamp, "IP", "Irq", "Conn", "Acpt", "RX‰", "TX‰", "Total", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs", "Retr", "Pct‱",
+                    timestamp, "IP", "Id", "Irq", "Conn", "Acpt", "RX‰", "TX‰", "Total", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs", "Retr", "Pct‱",
                     "Fail", "Pct‱", "TimO", "Pct‱", "Drop", "Pct‱", "OfoR", "Pct‱", "OfoT", "Pct‱", "Zero", "ZWnt"
                 ))
-                print("-" * 184)
+                print("-" * 187)
             rows = rows + 1
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
@@ -288,6 +306,9 @@ def main():
             time_squeeze  = get_delta(curr["TimeSqueeze"], prev["TimeSqueeze"])
             active_opens  = get_delta(curr["ActiveOpens"], prev["ActiveOpens"])
             passive_opens = get_delta(curr["PassiveOpens"], prev["PassiveOpens"])
+            total_cpu_time = get_delta(curr["TotalCPUTime"], prev["TotalCPUTime"])
+            idle_cpu_time = get_delta(curr["IdleCPUTime"], prev["IdleCPUTime"])
+            idle_percent = int((idle_cpu_time / (total_cpu_time + 1)) * 100)
 
             tcp_ext_curr = curr["TcpExt"]
             tcp_ext_prev = prev["TcpExt"]
@@ -332,7 +353,7 @@ def main():
 
             #timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             print(row_fmt.format(
-                timestamp, localip, 
+                timestamp, localip, idle_percent,
                 get_val_ptr(int(time_squeeze/args.interval)),
                 get_val_ptr(int(active_opens/args.interval)), 
                 get_val_ptr(int(passive_opens/args.interval)),
