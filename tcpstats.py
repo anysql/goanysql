@@ -245,8 +245,8 @@ def main():
     print(f"Starting TCP Quality Monitor (Interval: {args.interval}s)...")
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
-    header_fmt = "{:<19} | {:11}| {:>2} {:>4} {:>4} {:>4} | {:>3} {:>3} {:>4} {:>5} | {:>4} {:>4} {:>4} | {:>7} {:>7} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
-    row_fmt    = "{:<19} | {:<11}| {:>2d} {:>4} {:>4} {:>4} | {:>3d} {:>3d} {:>4} {:>5} | {:>4} {:>4} {:>4} | {:>7} {:>7} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
+    header_fmt = "{:<19} | {:11}| {:>2} {:>4} {:>4} {:>4} | {:>3} {:>3} {:>4} {:>5} | {:>4} {:>4} {:>4} | {:>6} {:>6} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
+    row_fmt    = "{:<19} | {:<11}| {:>2d} {:>4} {:>4} {:>4} | {:>3d} {:>3d} {:>4} {:>5} | {:>4} {:>4} {:>4} | {:>6} {:>6} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
 
     proc_files = {
         'IPv4 TCP': '/proc/net/tcp',
@@ -298,7 +298,7 @@ def main():
                     timestamp, "IP", "Id", "Irq", "Conn", "Acpt", "RX‰", "TX‰", "TWat", "Total", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs", "Retr", "Pct‱",
                     "Fail", "Pct‱", "TimO", "Pct‱", "Drop", "Pct‱", "OfoR", "Pct‱", "OfoT", "Pct‱", "Zero", "ZWnt"
                 ))
-                print("-" * 192)
+                print("-" * 190)
             rows = rows + 1
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
@@ -320,14 +320,6 @@ def main():
             ofo_pruned = get_delta(tcp_ext_curr.get("OfoPruned", 0), tcp_ext_prev.get("OfoPruned", 0))
             all_pruned = rcv_pruned + rcv_pruned
 
-            #ack_delayed = get_delta(tcp_ext_curr.get("DelayedACKs", 0), tcp_ext_prev.get("DelayedACKs", 0))
-            #ack_delaydrop = get_delta(tcp_ext_curr.get("DelayedACKLost", 0), tcp_ext_prev.get("DelayedACKLost", 0))
-            #all_ackdelay = int(100 * ack_delaydrop / (ack_delayed + ack_delaydrop + 1))
-
-            #fast_retrans = get_delta(tcp_ext_curr.get("TCPFastRetrans", 0), tcp_ext_prev.get("TCPFastRetrans", 0))
-            #slow_retrans = get_delta(tcp_ext_curr.get("TCPSlowStartRetrans", 0), tcp_ext_prev.get("TCPSlowStartRetrans", 0))
-            #syn_retrans = get_delta(tcp_ext_curr.get("TCPSynRetrans", 0), tcp_ext_prev.get("TCPSynRetrans", 0))
-            #total_retransm = fast_retrans + slow_retrans + syn_retrans
             orig_datasent = get_delta(tcp_ext_curr.get("TCPOrigDataSent", 0), tcp_ext_prev.get("TCPOrigDataSent", 0))
             total_retransm = retrans_delta
 
@@ -349,7 +341,6 @@ def main():
             ofo_queue = get_delta(tcp_ext_curr.get("TCPOFOQueue", 0), tcp_ext_prev.get("TCPOFOQueue", 0)) #receive reorder
             sack_reorder = get_delta(tcp_ext_curr.get("TCPSACKReorder", 0), tcp_ext_prev.get("TCPSACKReorder", 0)) #send reorder
 
-            # Extract zero window advertisements (indicates window scale or system buffering stress)
             to_zero_win = get_delta(tcp_ext_curr.get("TCPToZeroWindowAdv", 0), tcp_ext_prev.get("TCPToZeroWindowAdv", 0))
             from_zero_win = get_delta(tcp_ext_curr.get("TCPFromZeroWindowAdv", 0), tcp_ext_prev.get("TCPFromZeroWindowAdv", 0))
             want_zero_win = get_delta(tcp_ext_curr.get("TCPWantZeroWindowAdv", 0), tcp_ext_prev.get("TCPWantZeroWindowAdv", 0))
@@ -367,7 +358,6 @@ def main():
                 get_jiltertime(trans_wait_maxt, cpuhz),
                 get_jiltertime(probe_wait_time, cpuhz),
                 get_val_ptr(int(out_delta/args.interval)), get_val_ptr(int(in_delta/args.interval)),
-                #int(total_retransm/args.interval), get_pct_str(total_retransm, out_delta),
                 get_val_ptr(int(total_retransm/args.interval)), get_pct_str(total_retransm, total_retransm + orig_datasent),
                 get_val_ptr(int(total_retransfail/args.interval)), get_pct_str(total_retransfail, out_delta),
                 get_val_ptr(int((timeouts + loss_probes)/args.interval)), get_pct_str(timeouts + loss_probes, out_delta),
