@@ -311,7 +311,7 @@ def main():
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             if rows % 20 == 0:
                 print(header_fmt.format(
-                    timestamp, "IP", "Id", "Irq", "Conn", "Acpt", "RX‰", "Rbuf", "TX‰", "Tbuf", "TWat", "Total", "AckW", "MaxW", "PrbW",
+                    timestamp, "IP", "Id", "Irq", "Conn", "Acpt", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Total", "AckW", "MaxW", "PrbW",
                     "TxSegs", "RxSegs", "Retr", "Pct‱", "Fail", "Pct‱", "TimO", "Pct‱", "Drop", "Pct‱", "OfoR", "Pct‱", "Zero", "ZWnt"
                 ))
                 print("-" * 186)
