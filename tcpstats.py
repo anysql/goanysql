@@ -219,7 +219,13 @@ def get_delta(curr, prev):
         return curr - prev
     return curr
 
-def get_val_ptr(val):
+def get_val3_ptr(val):
+    if val < 1000:
+        return str(val)
+    val = int(val / 1000)
+    return str(val)+"K"
+
+def get_val4_ptr(val):
     if val < 10000:
         return str(val)
     val = int(val / 1000)
@@ -275,8 +281,8 @@ def main():
     print(f"Starting TCP Quality Monitor (Interval: {args.interval}s)...")
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
-    header_fmt = "{:<19} {:11}| {:>2} {:>2} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} {:>4} {:>5} | {:>4} {:>4} {:>4} | {:>6} {:>6} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
-    row_fmt    = "{:<19} {:<11}| {:>2d} {:>2d} {:>4} {:>4} {:>4} | {:>3d} {:>4} {:>3d} {:>4} {:>4} {:>5} | {:>4} {:>4} {:>4} | {:>6} {:>6} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
+    header_fmt = "{:<13} {:11}| {:>2} {:>2} {:>3} {:>3} {:>3} | {:>3} {:>4} {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>6} {:>6} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
+    row_fmt    = "{:<13} {:<11}| {:>2d} {:>2d} {:>3} {:>3} {:>3} | {:>3d} {:>4} {:>3d} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>6} {:>6} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
 
     proc_files = {
         'IPv4 TCP': '/proc/net/tcp',
@@ -326,13 +332,13 @@ def main():
                 non_zero_recv += file_recv
                 non_zero_send += file_send
 
-            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+            timestamp = time.strftime("%y%m%dT%H%M%S")
             if rows % 20 == 0:
                 print(header_fmt.format(
-                    timestamp, "IP", "ID", "WI", "Irq", "Conn", "Acpt", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Total", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs",
-                    "Retr", "Pct‱", "Fail", "Pct‱", "TimO", "Pct‱", "KDrp", "Pct‱", "NDrp", "Pct‱", "OfoR", "Pct‱", "Zero", "ZWnt"
+                    timestamp, "IP", "ID", "WA", "Irq", "New", "Acp", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Conn", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs",
+                    "Retr", "Pct‱", "Fal", "Pct‱", "TmO", "Pct‱", "KDp", "Pct‱", "NDp", "Pct‱", "OfoR", "Pct‱", "Zro", "Wnt"
                 ))
-                print("-" * 199)
+                print("-" * 178)
             rows = rows + 1
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
@@ -383,22 +389,22 @@ def main():
 
             #timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             print(row_fmt.format(
-                timestamp, localip, idle_percent, iowait_percent, get_val_ptr(time_squeeze),
-                get_val_ptr(int(active_opens/args.interval)), get_val_ptr(int(passive_opens/args.interval)),
+                timestamp, localip, idle_percent, iowait_percent, get_val3_ptr(time_squeeze),
+                get_val3_ptr(int(active_opens/args.interval)), get_val3_ptr(int(passive_opens/args.interval)),
                 int(1000 * non_zero_recv / (total_tcp_conns + 1)), get_byte_ptr(sock_recv_buf),
                 int(1000 * non_zero_send / (total_tcp_conns + 1)), get_byte_ptr(sock_send_buf),
-                get_val_ptr(time_wait_conns), get_val_ptr(total_tcp_conns),
+                get_val3_ptr(time_wait_conns), get_val4_ptr(total_tcp_conns),
                 get_jiltertime(trans_wait_time, cpuhz), get_jiltertime(trans_wait_maxt, cpuhz), get_jiltertime(probe_wait_time, cpuhz),
-                get_val_ptr(int(out_delta/args.interval)), get_val_ptr(int(in_delta/args.interval)),
-                get_val_ptr(int(total_retransm/args.interval)), get_pct_str(total_retransm, total_retransm + orig_datasent),
-                get_val_ptr(int(total_retransfail/args.interval)), get_pct_str(total_retransfail, out_delta),
-                get_val_ptr(int((timeouts + loss_probes)/args.interval)), get_pct_str(timeouts + loss_probes, out_delta),
-                get_val_ptr(int(total_indrop/args.interval)), get_pct_str(total_indrop, in_delta),
-                get_val_ptr(int(nic_rx_drop/args.interval)), get_pct_str(nic_rx_drop, nic_rx_pkts),
-                get_val_ptr(int((ofo_queue+sack_reorder)/args.interval)), get_pct_str(ofo_queue+sack_reorder, in_delta),
-                #get_val_ptr(int(sack_reorder/args.interval)), get_pct_str(sack_reorder, out_delta),
-                get_val_ptr(int((to_zero_win + from_zero_win)/args.interval)),
-                get_val_ptr(int(want_zero_win/args.interval))
+                get_val4_ptr(int(out_delta/args.interval)), get_val4_ptr(int(in_delta/args.interval)),
+                get_val4_ptr(int(total_retransm/args.interval)), get_pct_str(total_retransm, total_retransm + orig_datasent),
+                get_val4_ptr(int(total_retransfail/args.interval)), get_pct_str(total_retransfail, out_delta),
+                get_val3_ptr(int((timeouts + loss_probes)/args.interval)), get_pct_str(timeouts + loss_probes, out_delta),
+                get_val3_ptr(int(total_indrop/args.interval)), get_pct_str(total_indrop, in_delta),
+                get_val3_ptr(int(nic_rx_drop/args.interval)), get_pct_str(nic_rx_drop, nic_rx_pkts),
+                get_val4_ptr(int((ofo_queue+sack_reorder)/args.interval)), get_pct_str(ofo_queue+sack_reorder, in_delta),
+                #get_val4_ptr(int(sack_reorder/args.interval)), get_pct_str(sack_reorder, out_delta),
+                get_val3_ptr(int((to_zero_win + from_zero_win)/args.interval)),
+                get_val3_ptr(int(want_zero_win/args.interval))
             ))
 
             prev = curr
