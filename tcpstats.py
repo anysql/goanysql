@@ -167,6 +167,7 @@ def read_metrics():
 
     total_cpu_time = 0
     idle_cpu_time = 0
+    iowait_cpu_time = 0
     try:
         with open('/proc/stat', 'r') as f:
             for line in f:
@@ -175,13 +176,15 @@ def read_metrics():
                     fields = [int(x) for x in line.split()[1:]]
                     # In /proc/stat columns:
                     # 0:user, 1:nice, 2:system, 3:idle, 4:iowait, 5:irq, 6:softirq, 7:steal...
-                    idle_cpu_time = fields[3] + fields[4] # idle + iowait
+                    idle_cpu_time = fields[3] # idle
+                    iowait_cpu_time = fields[4] # iowait
                     total_cpu_time = sum(fields)
                     break
     except FileNotFoundError:
         pass
     metrics["TotalCPUTime"] = total_cpu_time
     metrics["IdleCPUTime"] = idle_cpu_time
+    metrics["IoWaitCPUTime"] = iowait_cpu_time
 
     # Automatically fetches and iterates through all available interfaces
     nic_rx_pkts = 0
@@ -272,8 +275,8 @@ def main():
     print(f"Starting TCP Quality Monitor (Interval: {args.interval}s)...")
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
-    header_fmt = "{:<19} {:11}| {:>2} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} {:>4} {:>5} | {:>4} {:>4} {:>4} | {:>6} {:>6} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
-    row_fmt    = "{:<19} {:<11}| {:>2d} {:>4} {:>4} {:>4} | {:>3d} {:>4} {:>3d} {:>4} {:>4} {:>5} | {:>4} {:>4} {:>4} | {:>6} {:>6} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
+    header_fmt = "{:<19} {:11}| {:>2} {:>2} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} {:>4} {:>5} | {:>4} {:>4} {:>4} | {:>6} {:>6} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
+    row_fmt    = "{:<19} {:<11}| {:>2d} {:>2d} {:>4} {:>4} {:>4} | {:>3d} {:>4} {:>3d} {:>4} {:>4} {:>5} | {:>4} {:>4} {:>4} | {:>6} {:>6} {:>6} {:>4} | {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} | {:>4} {:>4} | {:>4} {:>4}"
 
     proc_files = {
         'IPv4 TCP': '/proc/net/tcp',
@@ -326,10 +329,10 @@ def main():
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             if rows % 20 == 0:
                 print(header_fmt.format(
-                    timestamp, "IP", "Id", "Irq", "Conn", "Acpt", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Total", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs",
+                    timestamp, "IP", "ID", "WI", "Irq", "Conn", "Acpt", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Total", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs",
                     "Retr", "Pct‱", "Fail", "Pct‱", "TimO", "Pct‱", "KDrp", "Pct‱", "NDrp", "Pct‱", "OfoR", "Pct‱", "Zero", "ZWnt"
                 ))
-                print("-" * 196)
+                print("-" * 199)
             rows = rows + 1
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
@@ -342,7 +345,9 @@ def main():
             passive_opens = get_delta(curr["PassiveOpens"], prev["PassiveOpens"])
             total_cpu_time = get_delta(curr["TotalCPUTime"], prev["TotalCPUTime"])
             idle_cpu_time = get_delta(curr["IdleCPUTime"], prev["IdleCPUTime"])
+            iowait_cpu_time = get_delta(curr["IoWaitCPUTime"], prev["IoWaitCPUTime"])
             idle_percent = int((idle_cpu_time / (total_cpu_time + 1)) * 100)
+            iowait_percent = int((iowait_cpu_time / (total_cpu_time + 1)) * 100)
 
             tcp_ext_curr = curr["TcpExt"]
             tcp_ext_prev = prev["TcpExt"]
@@ -378,7 +383,7 @@ def main():
 
             #timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             print(row_fmt.format(
-                timestamp, localip, idle_percent, get_val_ptr(time_squeeze),
+                timestamp, localip, idle_percent, iowait_percent, get_val_ptr(time_squeeze),
                 get_val_ptr(int(active_opens/args.interval)), get_val_ptr(int(passive_opens/args.interval)),
                 int(1000 * non_zero_recv / (total_tcp_conns + 1)), get_byte_ptr(sock_recv_buf),
                 int(1000 * non_zero_send / (total_tcp_conns + 1)), get_byte_ptr(sock_send_buf),
