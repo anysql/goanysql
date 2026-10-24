@@ -25,7 +25,7 @@ def getlocalip():
         except socket.gaierror:
             return "Unknown"
 
-def get_traffic_ip():
+def get_traffic_ip(phynics):
     highest_iface = None
     max_bytes = -1
 
@@ -38,14 +38,17 @@ def get_traffic_ip():
             if not line.strip():
                 continue
             parts = line.split()
-            iface = parts[0].strip(":")
+            iface = parts[0].strip(":").lower()
 
             # Skip loopback interface
-            if iface.lower() in ["lo", "loopback"]:
-                continue
-
-            if iface.lower().startswith("docker"):
-                continue
+            if len(phynics) == 0:
+                if iface in ["lo", "loopback"]:
+                    continue
+                if iface.startswith("docker") or iface.startswith("veth") or iface.startswith("br-"):
+                    continue
+            else:
+                if iface not in phynics:
+                    continue
 
             # RX bytes is index 1, TX bytes is index 9
             rx_bytes = int(parts[1])
@@ -77,6 +80,23 @@ def get_traffic_ip():
 
     return ip_address
 
+def get_linux_physical_nics():
+    net_dir = '/sys/class/net'
+    physical_interfaces = []
+
+    if not os.path.exists(net_dir):
+        return physical_interfaces
+
+    for interface in os.listdir(net_dir):
+        path = os.path.join(net_dir, interface)
+        # Check where the symlink points. Virtual interfaces contain "/virtual/" in the path.
+        if os.path.islink(path):
+            real_path = os.readlink(path)
+            if 'virtual' not in real_path:
+                physical_interfaces.append(interface)
+
+    return physical_interfaces
+
 def parse_tcp_proc_file(filepath):
     """Parses a /proc/net/tcp file and yields (send_q, recv_q, st, tr, tr->when) for each connection."""
     if not os.path.exists(filepath):
@@ -105,7 +125,7 @@ def parse_tcp_proc_file(filepath):
             except (ValueError, IndexError):
                 continue
 
-def read_metrics():
+def read_metrics(phynics):
     metrics = {
         "TcpExt": {},
         "InSegs": 0,
@@ -189,6 +209,9 @@ def read_metrics():
     # Automatically fetches and iterates through all available interfaces
     nic_rx_pkts = 0
     nic_rx_drop = 0
+    nic_rx_errs = 0
+    nic_rx_byte = 0
+    nic_tx_byte = 0
     try:
         with open("/proc/net/dev", "r") as f:
             lines = f.readlines()
@@ -196,13 +219,22 @@ def read_metrics():
                 if ":" not in line:
                     continue
                 iface, vals_raw = line.split(":", 1)
-                iface = iface.strip()
-                if iface == "lo" or iface.startswith("docker"):
-                    continue
+                iface = iface.strip().lower()
+                if len(phynics) == 0:
+                    if iface in ["lo", "loopback"]:
+                        continue
+                    if iface.startswith("docker") or iface.startswith("veth") or iface.startswith("br-"):
+                        continue
+                else:
+                    if iface not in phynics:
+                        continue
                 vals = vals_raw.split()
                 try:
+                    nic_rx_byte += int(vals[0])
                     nic_rx_pkts += int(vals[1])
+                    nic_rx_errs += int(vals[2])
                     nic_rx_drop += int(vals[3])
+                    nic_tx_byte += int(vals[8])
                 except IndexError:
                     pass
 
@@ -210,7 +242,10 @@ def read_metrics():
         pass
 
     metrics["NICRxPkts"] = nic_rx_pkts
+    metrics["NICRxErrs"] = nic_rx_errs
     metrics["NICRxDrop"] = nic_rx_drop
+    metrics["NICRxByte"] = nic_rx_byte
+    metrics["NICTxByte"] = nic_tx_byte
 
     return metrics
 
@@ -234,14 +269,14 @@ def get_val4_ptr(val):
 def get_byte_ptr(val):
     if val < 10000:
         return str(val)
-    val = int(val / 1000)
+    val = val / 1000
     if val < 1000:
-        return str(val)+"K"
-    val = int(val / 1000)
+        return f"{val:.2f}"[0:3]+"K"
+    val = val / 1000
     if val < 1000:
-        return str(val)+"M"
-    val = int(val / 1000)
-    return str(val)+"G"
+        return f"{val:.2f}"[0:3]+"M"
+    val = val / 1000
+    return f"{val:.2f}"[0:3]+"G"
 
 def get_color_pct(pct, pstr):
     if pct < 10.0:
@@ -276,20 +311,21 @@ def main():
     args = parser.parse_args()
 
     rows = 0
-    localip = get_traffic_ip()
+    phynics = get_linux_physical_nics()
+    localip = get_traffic_ip(phynics)
     cpuhz = os.sysconf(os.sysconf_names['SC_CLK_TCK'])
     print(f"Starting TCP Quality Monitor (Interval: {args.interval}s)...")
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
-    header_fmt = "{:<13} {:11}| {:>2} {:>2} {:>3} {:>3} {:>3} | {:>3} {:>4} {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>6} {:>6} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
-    row_fmt    = "{:<13} {:<11}| {:>2d} {:>2d} {:>3} {:>3} {:>3} | {:>3d} {:>4} {:>3d} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>6} {:>6} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
+    header_fmt = "{:<13} {:11}| {:>2} {:>2} {:>3} {:>3} {:>3} | {:>3} {:>4} {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>6} {:>4} {:>6} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
+    row_fmt    = "{:<13} {:<11}| {:>2d} {:>2d} {:>3} {:>3} {:>3} | {:>3d} {:>4} {:>3d} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>6} {:>4} {:>6} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
 
     proc_files = {
         'IPv4 TCP': '/proc/net/tcp',
         'IPv6 TCP': '/proc/net/tcp6'
     }
 
-    prev = read_metrics()
+    prev = read_metrics(phynics)
     start_time = time.time()
     elapsed_time = 0
 
@@ -298,7 +334,7 @@ def main():
             elapsed_time = time.time() - start_time
             time.sleep(args.interval - elapsed_time)
             start_time = time.time()
-            curr = read_metrics()
+            curr = read_metrics(phynics)
 
             non_zero_recv = 0
             non_zero_send = 0
@@ -335,10 +371,10 @@ def main():
             timestamp = time.strftime("%y%m%dT%H%M%S")
             if rows % 20 == 0:
                 print(header_fmt.format(
-                    timestamp, "IP", "ID", "WA", "Irq", "New", "Acp", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Conn", "AckW", "MaxW", "PrbW", "TxSegs", "RxSegs",
-                    "Retr", "Pct‱", "Fal", "Pct‱", "TmO", "Pct‱", "KDp", "Pct‱", "NDp", "Pct‱", "OfoR", "Pct‱", "Zro", "Wnt"
+                    timestamp, "IP", "ID", "WA", "Irq", "New", "Acp", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Conn", "AckW", "MaxW", "PrbW", "TxSegs", "TByt",
+                    "RxSegs", "RByt", "Retr", "Pct‱", "Fal", "Pct‱", "TmO", "Pct‱", "KDp", "Pct‱", "NDp", "Err", "Pct‱", "OfoR", "Pct‱", "Zro", "Wnt"
                 ))
-                print("-" * 178)
+                print("-" * 192)
             rows = rows + 1
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
@@ -346,6 +382,9 @@ def main():
             retrans_delta = get_delta(curr["RetransSegs"], prev["RetransSegs"])
             nic_rx_pkts = get_delta(curr["NICRxPkts"], prev["NICRxPkts"])
             nic_rx_drop = get_delta(curr["NICRxDrop"], prev["NICRxDrop"])
+            nic_rx_errs = get_delta(curr["NICRxErrs"], prev["NICRxErrs"])
+            nic_rx_byte = get_delta(curr["NICRxByte"], prev["NICRxByte"])
+            nic_tx_byte = get_delta(curr["NICTxByte"], prev["NICTxByte"])
             time_squeeze  = get_delta(curr["TimeSqueeze"], prev["TimeSqueeze"])
             active_opens  = get_delta(curr["ActiveOpens"], prev["ActiveOpens"])
             passive_opens = get_delta(curr["PassiveOpens"], prev["PassiveOpens"])
@@ -395,12 +434,13 @@ def main():
                 int(1000 * non_zero_send / (total_tcp_conns + 1)), get_byte_ptr(sock_send_buf),
                 get_val3_ptr(time_wait_conns), get_val4_ptr(total_tcp_conns),
                 get_jiltertime(trans_wait_time, cpuhz), get_jiltertime(trans_wait_maxt, cpuhz), get_jiltertime(probe_wait_time, cpuhz),
-                get_val4_ptr(int(out_delta/args.interval)), get_val4_ptr(int(in_delta/args.interval)),
+                get_val4_ptr(int(out_delta/args.interval)), get_byte_ptr(int(nic_tx_byte/args.interval)),
+                get_val4_ptr(int(in_delta/args.interval)), get_byte_ptr(int(nic_rx_byte/args.interval)), 
                 get_val4_ptr(int(total_retransm/args.interval)), get_pct_str(total_retransm, total_retransm + orig_datasent),
                 get_val4_ptr(int(total_retransfail/args.interval)), get_pct_str(total_retransfail, out_delta),
                 get_val3_ptr(int((timeouts + loss_probes)/args.interval)), get_pct_str(timeouts + loss_probes, out_delta),
                 get_val3_ptr(int(total_indrop/args.interval)), get_pct_str(total_indrop, in_delta),
-                get_val3_ptr(int(nic_rx_drop/args.interval)), get_pct_str(nic_rx_drop, nic_rx_pkts),
+                get_val3_ptr(int(nic_rx_drop/args.interval)), get_val3_ptr(nic_rx_errs), get_pct_str(nic_rx_drop, nic_rx_pkts),
                 get_val4_ptr(int((ofo_queue+sack_reorder)/args.interval)), get_pct_str(ofo_queue+sack_reorder, in_delta),
                 #get_val4_ptr(int(sack_reorder/args.interval)), get_pct_str(sack_reorder, out_delta),
                 get_val3_ptr(int((to_zero_win + from_zero_win)/args.interval)),
