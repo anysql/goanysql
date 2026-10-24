@@ -89,6 +89,8 @@ def get_linux_physical_nics():
         return physical_interfaces
 
     for interface in os.listdir(net_dir):
+        if interface in ["lo", "loopback"]:
+            continue
         path = os.path.join(net_dir, interface)
         # Check where the symlink points. Virtual interfaces contain "/virtual/" in the path.
         if os.path.islink(path):
