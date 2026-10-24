@@ -83,6 +83,7 @@ def get_traffic_ip(phynics):
 def get_linux_physical_nics():
     net_dir = '/sys/class/net'
     physical_interfaces = []
+    bonding_interfaces = []
 
     if not os.path.exists(net_dir):
         return physical_interfaces
@@ -92,8 +93,16 @@ def get_linux_physical_nics():
         # Check where the symlink points. Virtual interfaces contain "/virtual/" in the path.
         if os.path.islink(path):
             real_path = os.readlink(path)
-            if 'virtual' not in real_path:
-                physical_interfaces.append(interface)
+            physical_interfaces.append(interface)
+            bond_slaves_path = os.path.join(path, "bonding", "slaves")
+            if os.path.exists(bond_slaves_path):
+                with open(bond_slaves_path, "r") as f:
+                    slaves = f.read().strip().split()
+                    bonding_interfaces.extend(slaves)
+
+    for item in bonding_interfaces:
+        while item in physical_interfaces:
+            physical_interfaces.remove(item)
 
     return physical_interfaces
 
