@@ -275,7 +275,10 @@ def get_val4_ptr(val):
     if val < 10000:
         return str(val)
     val = int(val / 1000)
-    return str(val)+"K"
+    if val < 1000:
+        return str(val)+"K"
+    val = int(val / 1000)
+    return str(val)+"M"
 
 def get_byte_ptr(val):
     if val < 10000:
@@ -328,8 +331,8 @@ def main():
     print(f"Starting TCP Quality Monitor (Interval: {args.interval}s)...")
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
-    header_fmt = "{:<13} {:11}| {:>2} {:>2} {:>3} {:>3} {:>3} | {:>3} {:>4} {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>6} {:>4} {:>6} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
-    row_fmt    = "{:<13} {:<11}| {:>2d} {:>2d} {:>3} {:>3} {:>3} | {:>3d} {:>4} {:>3d} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>6} {:>4} {:>6} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
+    header_fmt = "{:<13} {:11}| {:>2} {:>2} {:>3} {:>3} {:>3} | {:>3} {:>4} {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
+    row_fmt    = "{:<13} {:<11}| {:>2d} {:>2d} {:>3} {:>3} {:>3} | {:>3d} {:>4} {:>3d} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
 
     proc_files = {
         'IPv4 TCP': '/proc/net/tcp',
@@ -382,10 +385,10 @@ def main():
             timestamp = time.strftime("%y%m%dT%H%M%S")
             if rows % 20 == 0:
                 print(header_fmt.format(
-                    timestamp, "IP", "ID", "WA", "Irq", "New", "Acp", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Conn", "AckW", "MaxW", "PrbW", "TxSegs", "TByt",
-                    "RxSegs", "RByt", "Retr", "Pct‱", "Fal", "Pct‱", "TmO", "Pct‱", "KDp", "Pct‱", "NDp", "Err", "Pct‱", "OfoR", "Pct‱", "Zro", "Wnt"
+                    timestamp, "IP", "ID", "WA", "Irq", "New", "Acp", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Conn", "AckW", "MaxW", "PrbW", "TSeg", "TByt",
+                    "RSeg", "RByt", "Retr", "Pct‱", "Fal", "Pct‱", "TmO", "Pct‱", "KDp", "Pct‱", "NDp", "Err", "Pct‱", "OfoR", "Pct‱", "Zro", "Wnt"
                 ))
-                print("-" * 192)
+                print("-" * 188)
             rows = rows + 1
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
@@ -448,7 +451,7 @@ def main():
                 get_val4_ptr(int(out_delta/args.interval)), get_byte_ptr(int(nic_tx_byte/args.interval)),
                 get_val4_ptr(int(in_delta/args.interval)), get_byte_ptr(int(nic_rx_byte/args.interval)), 
                 get_val4_ptr(int(total_retransm/args.interval)), get_pct_str(total_retransm, total_retransm + orig_datasent),
-                get_val4_ptr(int(total_retransfail/args.interval)), get_pct_str(total_retransfail, out_delta),
+                get_val3_ptr(int(total_retransfail/args.interval)), get_pct_str(total_retransfail, out_delta),
                 get_val3_ptr(int((timeouts + loss_probes)/args.interval)), get_pct_str(timeouts + loss_probes, out_delta),
                 get_val3_ptr(int(total_indrop/args.interval)), get_pct_str(total_indrop, in_delta),
                 get_val3_ptr(int(nic_rx_drop/args.interval)), get_val3_ptr(nic_rx_errs), get_pct_str(nic_rx_drop, nic_rx_pkts),
