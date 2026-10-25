@@ -260,6 +260,9 @@ def read_metrics(phynics):
 
     return metrics
 
+def remove_dot_suffix(s):
+    return s[:-1] if s.endswith(".") else s
+
 def get_delta(curr, prev):
     if curr >= prev:
         return curr - prev
@@ -285,19 +288,19 @@ def get_val4_ptr(val):
     if val < 1000:
         return str(val)+"K"
     val = val / 1000
-    return f"{val:.2f}"[0:3]+"M"
+    return remove_dot_suffix(f"{val:.2f}"[0:3])+"M"
 
 def get_byte_ptr(val):
     if val < 10000:
         return str(val)
     val = val / 1000
     if val < 1000:
-        return f"{val:.2f}"[0:3]+"K"
+        return remove_dot_suffix(f"{val:.2f}"[0:3])+"K"
     val = val / 1000
     if val < 1000:
-        return f"{val:.2f}"[0:3]+"M"
+        return remove_dot_suffix(f"{val:.2f}"[0:3])+"M"
     val = val / 1000
-    return f"{val:.2f}"[0:3]+"G"
+    return remove_dot_suffix(f"{val:.2f}"[0:3])+"G"
 
 def get_color_pct(pct, pstr):
     if pct < 10.0:
@@ -310,12 +313,12 @@ def get_pct_str(delta, base):
     if base == 0:
         return "0.00"
     pct = (delta / base) * 10000
-    pstr = f"{pct:.2f}"[0:4]
+    pstr = remove_dot_suffix(f"{pct:.2f}"[0:4])
     return get_color_pct(pct, pstr)
 
 def get_jiltertime(val, hz):
     tim = (1 * val) / hz
-    return f"{tim:.3f}"[0:4]
+    return remove_dot_suffix(f"{tim:.3f}"[0:4])
 
 def main():
     parser = argparse.ArgumentParser(
