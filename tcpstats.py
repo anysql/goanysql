@@ -269,7 +269,14 @@ def get_val3_ptr(val):
     if val < 1000:
         return str(val)
     val = int(val / 1000)
-    return str(val)+"K"
+    if val < 100:
+        return str(val)+"K"
+    elif val < 1000:
+        val = int(val / 10)
+        return str(val)+"W"
+    else:
+        val = int(val / 1000)
+    return str(val)+"M"
 
 def get_val4_ptr(val):
     if val < 10000:
@@ -277,8 +284,8 @@ def get_val4_ptr(val):
     val = int(val / 1000)
     if val < 1000:
         return str(val)+"K"
-    val = int(val / 1000)
-    return str(val)+"M"
+    val = val / 1000
+    return f"{val:.2f}"[0:3]+"M"
 
 def get_byte_ptr(val):
     if val < 10000:
@@ -328,7 +335,6 @@ def main():
     phynics = get_linux_physical_nics()
     localip = get_traffic_ip(phynics)
     cpuhz = os.sysconf(os.sysconf_names['SC_CLK_TCK'])
-    print(f"Starting TCP Quality Monitor (Interval: {args.interval}s)...")
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
     header_fmt = "{:<13} {:11}| {:>2} {:>2} {:>3} {:>3} {:>3} | {:>3} {:>4} {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
@@ -464,7 +470,7 @@ def main():
             prev = curr
 
     except KeyboardInterrupt:
-        print("\nMonitoring stopped.")
+        pass
 
 if __name__ == "__main__":
     main()
