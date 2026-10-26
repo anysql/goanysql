@@ -314,7 +314,7 @@ def get_pct_str(delta, base):
         return "0.00"
     pct = (delta / base) * 10000
     pstr = remove_dot_suffix(f"{pct:.2f}"[0:4])
-    return get_color_pct(pct, pstr)
+    return get_color_pct(pct, pstr.rjust(4,' '))
 
 def get_jiltertime(val, hz):
     tim = (1 * val) / hz
