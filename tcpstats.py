@@ -352,6 +352,9 @@ def main():
     start_time = time.time()
     elapsed_time = 0
 
+    if args.interval < 5:
+        args.inteval = 5
+
     try:
         while True:
             elapsed_time = time.time() - start_time
