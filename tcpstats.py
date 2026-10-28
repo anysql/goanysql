@@ -332,6 +332,13 @@ def main():
         help="Interval in seconds (default: 10)"
     )
 
+    parser.add_argument(
+        "-c", "--count",
+        type=int,
+        default=0,
+        help="Loop count (default: 0)"
+    )
+
     args = parser.parse_args()
 
     rows = 0
@@ -351,15 +358,17 @@ def main():
     prev = read_metrics(phynics)
     start_time = time.time()
     elapsed_time = 0
+    loop_count = 0
 
     if args.interval < 5:
         args.inteval = 5
 
     try:
-        while True:
+        while args.count <= 0 or loop_count < args.count:
             elapsed_time = time.time() - start_time
             time.sleep(args.interval - elapsed_time)
             start_time = time.time()
+            loop_count += 1
             curr = read_metrics(phynics)
 
             non_zero_recv = 0
