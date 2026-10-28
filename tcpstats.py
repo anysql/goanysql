@@ -361,7 +361,7 @@ def main():
     loop_count = 0
 
     if args.interval < 5:
-        args.inteval = 5
+        args.interval = 5
 
     try:
         while args.count <= 0 or loop_count < args.count:
