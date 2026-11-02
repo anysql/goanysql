@@ -366,7 +366,11 @@ def main():
     try:
         while args.count <= 0 or loop_count < args.count:
             elapsed_time = time.time() - start_time
-            time.sleep(args.interval - elapsed_time)
+            if elapsed_time < 5.0:
+                time.sleep(args.interval - elapsed_time)
+            else:
+                time.sleep(args.interval)
+            elapsed_time = time.time() - start_time
             start_time = time.time()
             loop_count += 1
             curr = read_metrics(phynics)
@@ -464,22 +468,21 @@ def main():
             #timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             print(row_fmt.format(
                 timestamp, localip, idle_percent, iowait_percent, get_val3_ptr(time_squeeze),
-                get_val3_ptr(int(active_opens/args.interval)), get_val3_ptr(int(passive_opens/args.interval)),
+                get_val3_ptr(int(active_opens/elapsed_time)), get_val3_ptr(int(passive_opens/elapsed_time)),
                 int(1000 * non_zero_recv / (total_tcp_conns + 1)), get_byte_ptr(sock_recv_buf),
                 int(1000 * non_zero_send / (total_tcp_conns + 1)), get_byte_ptr(sock_send_buf),
                 get_val3_ptr(time_wait_conns), get_val4_ptr(total_tcp_conns),
                 get_jiltertime(trans_wait_time, cpuhz), get_jiltertime(trans_wait_maxt, cpuhz), get_jiltertime(probe_wait_time, cpuhz),
-                get_val4_ptr(int(out_delta/args.interval)), get_byte_ptr(int(nic_tx_byte/args.interval)),
-                get_val4_ptr(int(in_delta/args.interval)), get_byte_ptr(int(nic_rx_byte/args.interval)), 
-                get_val4_ptr(int(total_retransm/args.interval)), get_pct_str(total_retransm, total_retransm + orig_datasent),
-                get_val3_ptr(int(total_retransfail/args.interval)), get_pct_str(total_retransfail, out_delta),
-                get_val3_ptr(int((timeouts + loss_probes)/args.interval)), get_pct_str(timeouts + loss_probes, out_delta),
-                get_val3_ptr(int(total_indrop/args.interval)), get_pct_str(total_indrop, in_delta),
-                get_val3_ptr(int(nic_rx_drop/args.interval)), get_val3_ptr(nic_rx_errs), get_pct_str(nic_rx_drop, nic_rx_pkts),
-                get_val4_ptr(int((ofo_queue+sack_reorder)/args.interval)), get_pct_str(ofo_queue+sack_reorder, in_delta),
-                #get_val4_ptr(int(sack_reorder/args.interval)), get_pct_str(sack_reorder, out_delta),
-                get_val3_ptr(int((to_zero_win + from_zero_win)/args.interval)),
-                get_val3_ptr(int(want_zero_win/args.interval))
+                get_val4_ptr(int(out_delta/elapsed_time)), get_byte_ptr(int(nic_tx_byte/elapsed_time)),
+                get_val4_ptr(int(in_delta/elapsed_time)), get_byte_ptr(int(nic_rx_byte/elapsed_time)),
+                get_val4_ptr(int(total_retransm/elapsed_time)), get_pct_str(total_retransm, total_retransm + orig_datasent),
+                get_val3_ptr(int(total_retransfail/elapsed_time)), get_pct_str(total_retransfail, out_delta),
+                get_val3_ptr(int((timeouts + loss_probes)/elapsed_time)), get_pct_str(timeouts + loss_probes, out_delta),
+                get_val3_ptr(int(total_indrop/elapsed_time)), get_pct_str(total_indrop, in_delta),
+                get_val3_ptr(int(nic_rx_drop/elapsed_time)), get_val3_ptr(nic_rx_errs), get_pct_str(nic_rx_drop, nic_rx_pkts),
+                get_val4_ptr(int((ofo_queue+sack_reorder)/elapsed_time)), get_pct_str(ofo_queue+sack_reorder, in_delta),
+                get_val3_ptr(int((to_zero_win + from_zero_win)/elapsed_time)),
+                get_val3_ptr(int(want_zero_win/elapsed_time))
             ))
 
             prev = curr
