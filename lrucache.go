@@ -18,7 +18,6 @@ limitations under the License.
 package goanysql
 
 import (
-	"container/list"
 	"sync"
 )
 
@@ -34,8 +33,8 @@ type cacheShard[T1 any, T2 any] struct {
 	// executed when an entry is purged from the cache.
 	OnEvicted func(key T1, value T2)
 
-	ll    *list.List
-	cache map[interface{}]*list.Element
+	ll    *LRUList
+	cache map[interface{}]*LRUElement
 
 	entryPool *sync.Pool
 }
@@ -61,8 +60,8 @@ func (kv *CacheEntry[T1, T2]) reset() {
 func newShard[T1 any, T2 any](maxEntries int) *cacheShard[T1, T2] {
 	return &cacheShard[T1, T2]{
 		MaxEntries: maxEntries,
-		ll:         list.New(),
-		cache:      make(map[interface{}]*list.Element),
+		ll:         LRUNew(),
+		cache:      make(map[interface{}]*LRUElement),
 		entryPool:  &sync.Pool{New: func() any { return &CacheEntry[T1, T2]{Hit: false, Pin: false} }},
 	}
 }
@@ -70,8 +69,8 @@ func newShard[T1 any, T2 any](maxEntries int) *cacheShard[T1, T2] {
 // Add adds a value to the cache.
 func (c *cacheShard[T1, T2]) Add(key T1, value T2) bool {
 	if c.cache == nil {
-		c.cache = make(map[interface{}]*list.Element)
-		c.ll = list.New()
+		c.cache = make(map[interface{}]*LRUElement)
+		c.ll = LRUNew()
 		c.entryPool = &sync.Pool{New: func() any { return &CacheEntry[T1, T2]{Hit: false, Pin: false} }}
 	}
 	if ee, ok := c.cache[key]; ok {
@@ -190,9 +189,9 @@ again:
 	}
 }
 
-func (c *cacheShard[T1, T2]) removeElement(e *list.Element) {
-	c.ll.Remove(e)
+func (c *cacheShard[T1, T2]) removeElement(e *LRUElement) {
 	kv := e.Value.(*CacheEntry[T1, T2])
+	c.ll.Remove(e)
 	delete(c.cache, kv.Key)
 	if c.OnEvicted != nil {
 		c.OnEvicted(kv.Key, kv.Value)
