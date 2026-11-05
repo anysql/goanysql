@@ -96,6 +96,29 @@ func (c *cacheShard[T1, T2]) Add(key T1, value T2) bool {
 	return true
 }
 
+// Insert adds a value to the cache if not exists.
+func (c *cacheShard[T1, T2]) Insert(key T1, value T2) bool {
+        if c.cache == nil {
+                c.cache = make(map[interface{}]*LRUElement)
+                c.ll = LRUNew()
+                c.entryPool = &sync.Pool{New: func() any { return &CacheEntry[T1, T2]{Hit: false, Pin: false} }}
+        }
+	if _, ok := c.cache[key]; ok {
+		return false
+	}
+        val := c.entryPool.Get().(*CacheEntry[T1, T2])
+        val.Key = key
+        val.Value = value
+        val.Hit = false
+        val.Pin = false
+        ele := c.ll.PushFront(val)
+        c.cache[key] = ele
+        if c.MaxEntries != 0 && c.ll.Len() > c.MaxEntries {
+                c.RemoveOldest()
+        }
+        return true
+}
+
 // Get looks up a key's value from the cache.
 func (c *cacheShard[T1, T2]) Get(key T1) (value T2, ok bool) {
 	if c.cache == nil {
@@ -270,6 +293,13 @@ func (c *LRUCache[T1, T2]) Add(key T1, value T2) {
 	shard.Lock()
 	defer shard.Unlock()
 	shard.Add(key, value)
+}
+
+func (c *LRUCache[T1, T2]) Insert(key T1, value T2) {
+        shard := c.getShard(key)
+        shard.Lock()
+        defer shard.Unlock()
+        shard.Insert(key, value)
 }
 
 func (c *LRUCache[T1, T2]) Get(key T1) (value T2, ok bool) {
