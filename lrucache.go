@@ -288,18 +288,18 @@ func (c *LRUCache[T1, T2]) getShard(key T1) *cacheShard[T1, T2] {
 	return c.shards[c.KeyShard(key)%uint32(len(c.shards))]
 }
 
-func (c *LRUCache[T1, T2]) Add(key T1, value T2) {
+func (c *LRUCache[T1, T2]) Add(key T1, value T2) bool {
 	shard := c.getShard(key)
 	shard.Lock()
 	defer shard.Unlock()
-	shard.Add(key, value)
+	return shard.Add(key, value)
 }
 
-func (c *LRUCache[T1, T2]) Insert(key T1, value T2) {
+func (c *LRUCache[T1, T2]) Insert(key T1, value T2) bool {
         shard := c.getShard(key)
         shard.Lock()
         defer shard.Unlock()
-        shard.Insert(key, value)
+        return shard.Insert(key, value)
 }
 
 func (c *LRUCache[T1, T2]) Get(key T1) (value T2, ok bool) {
