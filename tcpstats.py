@@ -366,7 +366,7 @@ def main():
     try:
         while args.count <= 0 or loop_count < args.count:
             elapsed_time = time.time() - start_time
-            if elapsed_time < 5.0:
+            if elapsed_time < args.interval/5.0:
                 time.sleep(args.interval - elapsed_time)
             else:
                 time.sleep(args.interval)
