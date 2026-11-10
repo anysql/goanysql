@@ -33,6 +33,10 @@ type cacheShard[T1 any, T2 any] struct {
 	// executed when an entry is purged from the cache.
 	OnEvicted func(key T1, value T2)
 
+	// OnCached optionally specifies a callback function to be
+	// executed when an entry is added into the cache.
+	OnCached func(key T1, value T2)
+
 	ll    *LRUList
 	cache map[interface{}]*LRUElement
 
@@ -66,7 +70,7 @@ func newShard[T1 any, T2 any](maxEntries int) *cacheShard[T1, T2] {
 	}
 }
 
-// Add adds a value to the cache.
+// Add adds or replace a value to the cache.
 func (c *cacheShard[T1, T2]) Add(key T1, value T2) bool {
 	if c.cache == nil {
 		c.cache = make(map[interface{}]*LRUElement)
@@ -80,6 +84,9 @@ func (c *cacheShard[T1, T2]) Add(key T1, value T2) bool {
 			kv := ee.Value.(*CacheEntry[T1, T2])
 			kv.Hit = true
 			kv.Value = value
+			if c.OnCached != nil {
+				c.OnCached(kv.Key, kv.Value)
+			}
 			return false
 		}
 	}
@@ -88,6 +95,9 @@ func (c *cacheShard[T1, T2]) Add(key T1, value T2) bool {
 	val.Value = value
 	val.Hit = false
 	val.Pin = false
+	if c.OnCached != nil {
+		c.OnCached(val.Key, val.Value)
+	}
 	ele := c.ll.PushFront(val)
 	c.cache[key] = ele
 	if c.MaxEntries != 0 && c.ll.Len() > c.MaxEntries {
@@ -98,25 +108,28 @@ func (c *cacheShard[T1, T2]) Add(key T1, value T2) bool {
 
 // Insert adds a value to the cache if not exists.
 func (c *cacheShard[T1, T2]) Insert(key T1, value T2) bool {
-        if c.cache == nil {
-                c.cache = make(map[interface{}]*LRUElement)
-                c.ll = LRUNew()
-                c.entryPool = &sync.Pool{New: func() any { return &CacheEntry[T1, T2]{Hit: false, Pin: false} }}
-        }
+	if c.cache == nil {
+		c.cache = make(map[interface{}]*LRUElement)
+		c.ll = LRUNew()
+		c.entryPool = &sync.Pool{New: func() any { return &CacheEntry[T1, T2]{Hit: false, Pin: false} }}
+	}
 	if _, ok := c.cache[key]; ok {
 		return false
 	}
-        val := c.entryPool.Get().(*CacheEntry[T1, T2])
-        val.Key = key
-        val.Value = value
-        val.Hit = false
-        val.Pin = false
-        ele := c.ll.PushFront(val)
-        c.cache[key] = ele
-        if c.MaxEntries != 0 && c.ll.Len() > c.MaxEntries {
-                c.RemoveOldest()
-        }
-        return true
+	val := c.entryPool.Get().(*CacheEntry[T1, T2])
+	val.Key = key
+	val.Value = value
+	val.Hit = false
+	val.Pin = false
+	if c.OnCached != nil {
+		c.OnCached(val.Key, val.Value)
+	}
+	ele := c.ll.PushFront(val)
+	c.cache[key] = ele
+	if c.MaxEntries != 0 && c.ll.Len() > c.MaxEntries {
+		c.RemoveOldest()
+	}
+	return true
 }
 
 // Get looks up a key's value from the cache.
@@ -257,16 +270,25 @@ func (c *cacheShard[T1, T2]) setOnEvicted(f func(key T1, value T2)) {
 	c.OnEvicted = f
 }
 
+func (c *cacheShard[T1, T2]) setOnCached(f func(key T1, value T2)) {
+	c.OnCached = f
+}
+
 type LRUCache[T1 any, T2 any] struct {
 	shards     []*cacheShard[T1, T2]
 	KeyShard   func(key T1) uint32
-	OnEvicted  func(key T1, value T2)
 	MaxEntries int
 }
 
 func (c *LRUCache[T1, T2]) SetOnEvicted(f func(key T1, value T2)) {
 	for _, shard := range c.shards {
 		shard.setOnEvicted(f)
+	}
+}
+
+func (c *LRUCache[T1, T2]) SetOnCached(f func(key T1, value T2)) {
+	for _, shard := range c.shards {
+		shard.setOnCached(f)
 	}
 }
 
@@ -296,10 +318,10 @@ func (c *LRUCache[T1, T2]) Add(key T1, value T2) bool {
 }
 
 func (c *LRUCache[T1, T2]) Insert(key T1, value T2) bool {
-        shard := c.getShard(key)
-        shard.Lock()
-        defer shard.Unlock()
-        return shard.Insert(key, value)
+	shard := c.getShard(key)
+	shard.Lock()
+	defer shard.Unlock()
+	return shard.Insert(key, value)
 }
 
 func (c *LRUCache[T1, T2]) Get(key T1) (value T2, ok bool) {
@@ -314,14 +336,6 @@ func (c *LRUCache[T1, T2]) Pin(key T1) bool {
 	shard.RLock()
 	defer shard.RUnlock()
 	return shard.Pin(key)
-}
-
-// Get a key's entry in the cache.
-func (c *LRUCache[T1, T2]) GetEntry(key T1) (*CacheEntry[T1, T2], bool) {
-	shard := c.getShard(key)
-	shard.RLock()
-	defer shard.RUnlock()
-	return shard.GetEntry(key)
 }
 
 // Remove removes the provided key from the cache.

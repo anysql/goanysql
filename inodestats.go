@@ -49,9 +49,8 @@ func NewFileReadStats(capacity int) *FileReadStats {
 }
 
 func (fsc *FileReadStats) Touch(inode uint64, tm int64) {
-	if entry, ok := fsc.cache.GetEntry(inode); ok {
-		entry.Value.Touch(tm)
-		entry.Hit = true
+	if entry, ok := fsc.cache.Get(inode); ok {
+		entry.Touch(tm)
 		return
 	}
 	var val ReadStatsItem
@@ -71,22 +70,22 @@ func (fsc *FileReadStats) ResetStats() {
 }
 
 func (fsc *FileReadStats) ScoreMins(inode uint64) int {
-	if entry, ok := fsc.cache.GetEntry(inode); ok {
-		return entry.Value.ScoreMins()
+	if entry, ok := fsc.cache.Get(inode); ok {
+		return entry.ScoreMins()
 	}
 	return 0
 }
 
 func (fsc *FileReadStats) ScoreHour(inode uint64) int {
-	if entry, ok := fsc.cache.GetEntry(inode); ok {
-		return entry.Value.ScoreHour()
+	if entry, ok := fsc.cache.Get(inode); ok {
+		return entry.ScoreHour()
 	}
 	return 0
 }
 
 func (fsc *FileReadStats) ScoreDays(inode uint64) int {
-	if entry, ok := fsc.cache.GetEntry(inode); ok {
-		return entry.Value.ScoreDays()
+	if entry, ok := fsc.cache.Get(inode); ok {
+		return entry.ScoreDays()
 	}
 	return 0
 }
