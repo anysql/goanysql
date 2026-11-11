@@ -272,6 +272,25 @@ def read_metrics(phynics):
         pass
     metrics["ArpTableFull"] = arp_table_fulls
 
+    rt_cache_in_slow = 0
+    rt_cache_out_slow = 0
+    try:
+        with open("/proc/net/stat/rt_cache", "r") as f:
+            idx_in_slow = -1
+            idx_out_slow = -1
+            for line in f:
+                fields = line.strip().split()
+                if idx_in_slow == -1:
+                    idx_in_slow = fields.index("in_slow_tot")
+                    idx_out_slow = fields.index("out_slow_tot")
+                else:
+                    rt_cache_in_slow += int(fields[idx_in_slow],16)
+                    rt_cache_out_slow += int(fields[idx_out_slow],16)
+    except FileNotFoundError:
+        pass
+    metrics["RouteCacheInSlow"] = rt_cache_in_slow
+    metrics["RouteCacheOutSlow"] = rt_cache_out_slow
+
     return metrics
 
 def remove_dot_suffix(s):
@@ -361,8 +380,8 @@ def main():
     cpuhz = os.sysconf(os.sysconf_names['SC_CLK_TCK'])
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
-    header_fmt = "{:<13} {:11}| {:>2} {:>2} {:>3} {:>3} {:>3} {:>3} | {:>3} {:>4} {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
-    row_fmt    = "{:<13} {:<11}| {:>2d} {:>2d} {:>3} {:>3} {:>3} {:>3} | {:>3d} {:>4} {:>3d} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
+    header_fmt = "{:<13} {:11}| {:>2} {:>2} {:>3} {:>3} {:>3} {:>3} {:>3} | {:>3} {:>4} {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
+    row_fmt    = "{:<13} {:<11}| {:>2d} {:>2d} {:>3} {:>3} {:>3} {:>3} {:>3} | {:>3d} {:>4} {:>3d} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
 
     proc_files = {
         'IPv4 TCP': '/proc/net/tcp',
@@ -424,10 +443,10 @@ def main():
             timestamp = time.strftime("%y%m%dT%H%M%S")
             if rows % 20 == 0:
                 print(header_fmt.format(
-                    timestamp, "IP", "ID", "WA", "Irq", "New", "Acp", "Arp", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Conn", "AckW", "MaxW", "PrbW", "TSeg", "TByt",
+                    timestamp, "IP", "ID", "WA", "Irq", "New", "Acp", "Arp", "Rou", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Conn", "AckW", "MaxW", "PrbW", "TSeg", "TByt",
                     "RSeg", "RByt", "Retr", "Pct‱", "Fal", "Pct‱", "TmO", "Pct‱", "KDp", "Pct‱", "NDp", "Err", "Pct‱", "OfoR", "Pct‱", "Zro", "Wnt"
                 ))
-                print("-" * 192)
+                print("-" * 196)
             rows = rows + 1
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
@@ -439,6 +458,8 @@ def main():
             nic_rx_byte = get_delta(curr["NICRxByte"], prev["NICRxByte"])
             nic_tx_byte = get_delta(curr["NICTxByte"], prev["NICTxByte"])
             arp_table_full = get_delta(curr["ArpTableFull"], prev["ArpTableFull"])
+            rtcache_in_slow = get_delta(curr["RouteCacheInSlow"], prev["RouteCacheInSlow"])
+            rtcache_out_slow = get_delta(curr["RouteCacheOutSlow"], prev["RouteCacheOutSlow"])
             time_squeeze  = get_delta(curr["TimeSqueeze"], prev["TimeSqueeze"])
             active_opens  = get_delta(curr["ActiveOpens"], prev["ActiveOpens"])
             passive_opens = get_delta(curr["PassiveOpens"], prev["PassiveOpens"])
@@ -483,7 +504,8 @@ def main():
             #timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             print(row_fmt.format(
                 timestamp, localip, idle_percent, iowait_percent, get_val3_ptr(time_squeeze),
-                get_val3_ptr(int(active_opens/elapsed_time)), get_val3_ptr(int(passive_opens/elapsed_time)), get_val3_ptr(int(arp_table_full/elapsed_time)),
+                get_val3_ptr(int(active_opens/elapsed_time)), get_val3_ptr(int(passive_opens/elapsed_time)),
+                get_val3_ptr(int(arp_table_full/elapsed_time)), get_val3_ptr(int((rtcache_in_slow + rtcache_out_slow)/elapsed_time)),
                 int(1000 * non_zero_recv / (total_tcp_conns + 1)), get_byte_ptr(sock_recv_buf),
                 int(1000 * non_zero_send / (total_tcp_conns + 1)), get_byte_ptr(sock_send_buf),
                 get_val3_ptr(time_wait_conns), get_val4_ptr(total_tcp_conns),
