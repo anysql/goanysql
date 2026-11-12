@@ -199,6 +199,7 @@ def read_metrics(phynics):
     total_cpu_time = 0
     idle_cpu_time = 0
     iowait_cpu_time = 0
+    softirq_cpu_time = 0
     try:
         with open('/proc/stat', 'r') as f:
             for line in f:
@@ -209,6 +210,7 @@ def read_metrics(phynics):
                     # 0:user, 1:nice, 2:system, 3:idle, 4:iowait, 5:irq, 6:softirq, 7:steal...
                     idle_cpu_time = fields[3] # idle
                     iowait_cpu_time = fields[4] # iowait
+                    softirq_cpu_time = fields[6] # softirq
                     total_cpu_time = sum(fields)
                     break
     except FileNotFoundError:
@@ -216,6 +218,7 @@ def read_metrics(phynics):
     metrics["TotalCPUTime"] = total_cpu_time
     metrics["IdleCPUTime"] = idle_cpu_time
     metrics["IoWaitCPUTime"] = iowait_cpu_time
+    metrics["SoftIrqCPUTime"] = softirq_cpu_time
 
     # Automatically fetches and iterates through all available interfaces
     nic_rx_pkts = 0
@@ -380,8 +383,8 @@ def main():
     cpuhz = os.sysconf(os.sysconf_names['SC_CLK_TCK'])
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
-    header_fmt = "{:<13} {:11}| {:>2} {:>2} {:>3} {:>3} {:>3} {:>3} {:>3} | {:>3} {:>4} {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
-    row_fmt    = "{:<13} {:<11}| {:>2d} {:>2d} {:>3} {:>3} {:>3} {:>3} {:>3} | {:>3d} {:>4} {:>3d} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
+    header_fmt = "{:<13} {:11}| {:>2} {:>2} {:>2} {:>3} {:>3} {:>3} {:>3} {:>3} | {:>3} {:>4} {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
+    row_fmt    = "{:<13} {:<11}| {:>2d} {:>2d} {:>2d} {:>3} {:>3} {:>3} {:>3} {:>3} | {:>3d} {:>4} {:>3d} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
 
     proc_files = {
         'IPv4 TCP': '/proc/net/tcp',
@@ -443,10 +446,10 @@ def main():
             timestamp = time.strftime("%y%m%dT%H%M%S")
             if rows % 20 == 0:
                 print(header_fmt.format(
-                    timestamp, "IP", "ID", "WA", "Irq", "New", "Acp", "Arp", "Rou", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Conn", "AckW", "MaxW", "PrbW", "TSeg", "TByt",
+                    timestamp, "IP", "ID", "WA", "SI", "Irq", "New", "Acp", "Arp", "Rou", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Conn", "AckW", "MaxW", "PrbW", "TSeg", "TByt",
                     "RSeg", "RByt", "Retr", "Pct‱", "Fal", "Pct‱", "TmO", "Pct‱", "KDp", "Pct‱", "NDp", "Err", "Pct‱", "OfoR", "Pct‱", "Zro", "Wnt"
                 ))
-                print("-" * 196)
+                print("-" * 199)
             rows = rows + 1
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
@@ -466,8 +469,10 @@ def main():
             total_cpu_time = get_delta(curr["TotalCPUTime"], prev["TotalCPUTime"])
             idle_cpu_time = get_delta(curr["IdleCPUTime"], prev["IdleCPUTime"])
             iowait_cpu_time = get_delta(curr["IoWaitCPUTime"], prev["IoWaitCPUTime"])
+            softirq_cpu_time = get_delta(curr["SoftIrqCPUTime"], prev["SoftIrqCPUTime"])
             idle_percent = int((idle_cpu_time / (total_cpu_time + 1)) * 100)
             iowait_percent = int((iowait_cpu_time / (total_cpu_time + 1)) * 100)
+            softirq_percent = int((softirq_cpu_time / (total_cpu_time + 1)) * 100)
 
             tcp_ext_curr = curr["TcpExt"]
             tcp_ext_prev = prev["TcpExt"]
@@ -503,7 +508,7 @@ def main():
 
             #timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             print(row_fmt.format(
-                timestamp, localip, idle_percent, iowait_percent, get_val3_ptr(time_squeeze),
+                timestamp, localip, idle_percent, iowait_percent, softirq_percent, get_val3_ptr(time_squeeze),
                 get_val3_ptr(int(active_opens/elapsed_time)), get_val3_ptr(int(passive_opens/elapsed_time)),
                 get_val3_ptr(int(arp_table_full/elapsed_time)), get_val3_ptr(int((rtcache_in_slow + rtcache_out_slow)/elapsed_time)),
                 int(1000 * non_zero_recv / (total_tcp_conns + 1)), get_byte_ptr(sock_recv_buf),
