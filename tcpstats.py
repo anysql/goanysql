@@ -5,6 +5,7 @@ import socket
 import re
 import struct
 import fcntl
+from pathlib import Path
 #import psutil
 
 RED = "\033[31m"
@@ -294,6 +295,30 @@ def read_metrics(phynics):
     metrics["RouteCacheInSlow"] = rt_cache_in_slow
     metrics["RouteCacheOutSlow"] = rt_cache_out_slow
 
+    sensor_abnormal_cnt = 0
+    for input_path in Path("/sys/class/hwmon").glob("hwmon*/temp*_input"):
+        # 优先使用 _crit，不存在则回退到 _highest
+        crit_path = input_path.with_name(
+            input_path.name.replace("_input", "_crit")
+        )
+        highest_path = input_path.with_name(
+            input_path.name.replace("_input", "_highest")
+        )
+        if crit_path.is_file():
+            threshold_path = crit_path
+        elif highest_path.is_file():
+            threshold_path = highest_path
+        else:
+            continue
+        try:
+            input_val = int(input_path.read_text().strip())
+            threshold_val = int(threshold_path.read_text().strip())
+            if input_val > threshold_val:
+                sensor_abnormal_cnt += 1
+        except (OSError, ValueError):
+            continue
+    metrics["SensorAbnormal"] = sensor_abnormal_cnt
+
     return metrics
 
 def remove_dot_suffix(s):
@@ -383,8 +408,8 @@ def main():
     cpuhz = os.sysconf(os.sysconf_names['SC_CLK_TCK'])
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
-    header_fmt = "{:<13} {:11}| {:>2} {:>2} {:>2} {:>3} {:>3} {:>3} {:>3} {:>3} | {:>3} {:>4} {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
-    row_fmt    = "{:<13} {:<11}| {:>2d} {:>2d} {:>2d} {:>3} {:>3} {:>3} {:>3} {:>3} | {:>3d} {:>4} {:>3d} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
+    header_fmt = "{:<13} {:11}| {:>2} {:>2} {:>2} {:>3} {:>3} {:>3} {:>3} {:>3} {:>2} | {:>3} {:>4} {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
+    row_fmt    = "{:<13} {:<11}| {:>2d} {:>2d} {:>2d} {:>3} {:>3} {:>3} {:>3} {:>3} {:>2d} | {:>3d} {:>4} {:>3d} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
 
     proc_files = {
         'IPv4 TCP': '/proc/net/tcp',
@@ -446,10 +471,10 @@ def main():
             timestamp = time.strftime("%y%m%dT%H%M%S")
             if rows % 20 == 0:
                 print(header_fmt.format(
-                    timestamp, "IP", "ID", "WA", "SI", "Sqz", "New", "Acp", "Arp", "Rou", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Conn", "AckW", "MaxW", "PrbW", "TSeg", "TByt",
+                    timestamp, "IP", "ID", "WA", "SI", "Sqz", "New", "Acp", "Arp", "Rou", "SS", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Conn", "AckW", "MaxW", "PrbW", "TSeg", "TByt",
                     "RSeg", "RByt", "Retr", "Pct‱", "Fal", "Pct‱", "TmO", "Pct‱", "KDp", "Pct‱", "NDp", "Err", "Pct‱", "OfoR", "Pct‱", "Zro", "Wnt"
                 ))
-                print("-" * 199)
+                print("-" * 202)
             rows = rows + 1
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
@@ -463,6 +488,7 @@ def main():
             arp_table_full = get_delta(curr["ArpTableFull"], prev["ArpTableFull"])
             rtcache_in_slow = get_delta(curr["RouteCacheInSlow"], prev["RouteCacheInSlow"])
             rtcache_out_slow = get_delta(curr["RouteCacheOutSlow"], prev["RouteCacheOutSlow"])
+            sensor_abnormal_cnt = curr["SensorAbnormal"]
             time_squeeze  = get_delta(curr["TimeSqueeze"], prev["TimeSqueeze"])
             active_opens  = get_delta(curr["ActiveOpens"], prev["ActiveOpens"])
             passive_opens = get_delta(curr["PassiveOpens"], prev["PassiveOpens"])
@@ -511,6 +537,7 @@ def main():
                 timestamp, localip, idle_percent, iowait_percent, softirq_percent, get_val3_ptr(time_squeeze),
                 get_val3_ptr(int(active_opens/elapsed_time)), get_val3_ptr(int(passive_opens/elapsed_time)),
                 get_val3_ptr(int(arp_table_full/elapsed_time)), get_val3_ptr(int((rtcache_in_slow + rtcache_out_slow)/elapsed_time)),
+                sensor_abnormal_cnt,
                 int(1000 * non_zero_recv / (total_tcp_conns + 1)), get_byte_ptr(sock_recv_buf),
                 int(1000 * non_zero_send / (total_tcp_conns + 1)), get_byte_ptr(sock_send_buf),
                 get_val3_ptr(time_wait_conns), get_val4_ptr(total_tcp_conns),
