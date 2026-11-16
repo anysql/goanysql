@@ -301,13 +301,13 @@ def read_metrics(phynics):
         crit_path = input_path.with_name(
             input_path.name.replace("_input", "_crit")
         )
-        highest_path = input_path.with_name(
-            input_path.name.replace("_input", "_highest")
+        max_path = input_path.with_name(
+            input_path.name.replace("_input", "_max")
         )
-        if crit_path.is_file():
+        if max_path.is_file():
+            threshold_path = max_path
+        elif crit_path.is_file():
             threshold_path = crit_path
-        elif highest_path.is_file():
-            threshold_path = highest_path
         else:
             continue
         try:
