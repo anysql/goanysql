@@ -5,6 +5,7 @@ import socket
 import re
 import struct
 import fcntl
+import sys
 from pathlib import Path
 #import psutil
 
@@ -424,8 +425,15 @@ def main():
     if args.interval < 5:
         args.interval = 5
 
+    autoload_path = os.path.abspath(__file__)
+    autoload_mtime = os.path.getmtime(autoload_path)
+
     try:
         while args.count <= 0 or loop_count < args.count:
+            current_mtime = os.path.getmtime(autoload_path)
+            if current_mtime != autoload_mtime:
+                autoload_mtime = current_mtime
+                os.execv(sys.executable, [sys.executable] + sys.argv)
             elapsed_time = time.time() - start_time
             if elapsed_time < args.interval/5.0:
                 time.sleep(args.interval - elapsed_time)
