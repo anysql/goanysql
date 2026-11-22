@@ -1,4 +1,5 @@
 import time
+import glob
 import os
 import argparse
 import socket
@@ -137,6 +138,38 @@ def parse_tcp_proc_file(filepath):
                 yield send_q, recv_q, st, tr, tm
             except (ValueError, IndexError):
                 continue
+
+def _read_memfree_kb(file_path):
+    """從指定的 meminfo 檔案中提取 MemFree (單位: KB)"""
+    if not os.path.exists(file_path):
+        return None
+    with open(file_path, "r") as f:
+        for line in f:
+            if "MemFree:" in line:
+                match = re.search(r"MemFree:\s+(\d+)\s+kB", line)
+                if match:
+                    return int(match.group(1))
+    return None
+
+
+def get_min_free_memory_gb():
+    """獲取 NUMA 節點中最小的 MemFree，若不支援 NUMA 則回傳系統 MemFree (單位: GB)"""
+    node_files = glob.glob("/sys/devices/system/node/node[0-9]*/meminfo")
+
+    numa_frees = []
+    for path in node_files:
+        free_kb = _read_memfree_kb(path)
+        if free_kb is not None:
+            numa_frees.append(free_kb)
+
+    # 若有偵測到 NUMA 節點，取最小值；否則讀取系統整體的 /proc/meminfo
+    if numa_frees:
+        min_free_kb = min(numa_frees)
+    else:
+        min_free_kb = _read_memfree_kb("/proc/meminfo") or 0
+
+    val = round(min_free_kb / (1024 * 1024), 1)
+    return remove_dot_suffix(f"{val:.1f}"[0:3])
 
 def read_metrics(phynics):
     metrics = {
@@ -409,8 +442,8 @@ def main():
     cpuhz = os.sysconf(os.sysconf_names['SC_CLK_TCK'])
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
-    header_fmt = "{:<13} {:11}| {:>2} {:>2} {:>2} {:>3} {:>3} {:>3} {:>3} {:>3} {:>2} | {:>3} {:>4} {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
-    row_fmt    = "{:<13} {:<11}| {:>2d} {:>2d} {:>2d} {:>3} {:>3} {:>3} {:>3} {:>3} {:>2d} | {:>3d} {:>4} {:>3d} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
+    header_fmt = "{:<13} {:11}| {:>2} {:>2} {:>2} {:>3} {:>3} {:>3} {:>3} {:>3} {:>3} {:>2} | {:>3} {:>4} {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
+    row_fmt    = "{:<13} {:<11}| {:>2d} {:>2d} {:>2d} {:>3} {:>3} {:>3} {:>3} {:>3} {:>3} {:>2d} | {:>3d} {:>4} {:>3d} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
 
     proc_files = {
         'IPv4 TCP': '/proc/net/tcp',
@@ -433,6 +466,9 @@ def main():
             current_mtime = os.path.getmtime(autoload_path)
             if current_mtime != autoload_mtime:
                 autoload_mtime = current_mtime
+                os.environ["PYTHONUNBUFFERED"] = "1"
+                sys.stdout.flush()
+                sys.stderr.flush()
                 os.execv(sys.executable, [sys.executable] + sys.argv)
             elapsed_time = time.time() - start_time
             if elapsed_time < args.interval/5.0:
@@ -479,11 +515,13 @@ def main():
             timestamp = time.strftime("%y%m%dT%H%M%S")
             if rows % 20 == 0:
                 print(header_fmt.format(
-                    timestamp, "IP", "ID", "WA", "SI", "Sqz", "New", "Acp", "Arp", "Rou", "SS", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Conn", "AckW", "MaxW", "PrbW", "TSeg", "TByt",
+                    timestamp, "IP", "ID", "WA", "SI", "Fre", "Sqz", "New", "Acp", "Arp", "Rou", "SS", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Conn", "AckW", "MaxW", "PrbW", "TSeg", "TByt",
                     "RSeg", "RByt", "Retr", "Pct‱", "Fal", "Pct‱", "TmO", "Pct‱", "KDp", "Pct‱", "NDp", "Err", "Pct‱", "OfoR", "Pct‱", "Zro", "Wnt"
                 ))
-                print("-" * 202)
+                print("-" * 206)
             rows = rows + 1
+
+            min_free_bytes = get_min_free_memory_gb()
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
             in_delta = get_delta(curr["InSegs"], prev["InSegs"])
@@ -542,7 +580,7 @@ def main():
 
             #timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             print(row_fmt.format(
-                timestamp, localip, idle_percent, iowait_percent, softirq_percent, get_val3_ptr(time_squeeze),
+                timestamp, localip, idle_percent, iowait_percent, softirq_percent, min_free_bytes, get_val3_ptr(time_squeeze),
                 get_val3_ptr(int(active_opens/elapsed_time)), get_val3_ptr(int(passive_opens/elapsed_time)),
                 get_val3_ptr(int(arp_table_full/elapsed_time)), get_val3_ptr(int((rtcache_in_slow + rtcache_out_slow)/elapsed_time)),
                 sensor_abnormal_cnt,
