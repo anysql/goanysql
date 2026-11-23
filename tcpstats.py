@@ -8,12 +8,30 @@ import struct
 import fcntl
 import sys
 from pathlib import Path
-#import psutil
 
 RED = "\033[31m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
 RESET = "\033[0m"
+
+def acquire_runlock(lock_path="/tmp/tcpstats.lock"):
+  # 必须保持文件句柄在程序运行期间一直打开，否则关闭或被垃圾回收会自动释放锁
+  lock_file = open(lock_path, "w")
+  try:
+    if os.name == "nt":  # Windows 系统
+      import msvcrt
+
+      # LK_NBLCK: 非阻塞锁定 1 个字节
+      msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+    else:  # Linux / macOS 系统
+      import fcntl
+
+      # LOCK_EX: 排他锁 | LOCK_NB: 非阻塞
+      fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    return lock_file
+  except (IOError, OSError):
+    lock_file.close()
+    return None
 
 def getlocalip():
     hostname = socket.gethostname()
@@ -450,6 +468,10 @@ def main():
         'IPv6 TCP': '/proc/net/tcp6'
     }
 
+    lock_handle = acquire_runlock("/tmp/tcpstats.lock")
+    if not lock_handle:
+        sys.exit(1)
+
     prev = read_metrics(phynics)
     start_time = time.time()
     elapsed_time = 0
@@ -469,6 +491,7 @@ def main():
                 os.environ["PYTHONUNBUFFERED"] = "1"
                 sys.stdout.flush()
                 sys.stderr.flush()
+                lock_handle.close()
                 os.execv(sys.executable, [sys.executable] + sys.argv)
             elapsed_time = time.time() - start_time
             if elapsed_time < args.interval/5.0:
@@ -604,6 +627,8 @@ def main():
 
     except KeyboardInterrupt:
         pass
+
+    lock_handle.close()
 
 if __name__ == "__main__":
     main()
