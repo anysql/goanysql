@@ -115,9 +115,8 @@ def get_linux_physical_nics():
         path = os.path.join(net_dir, interface)
         # Check where the symlink points. Virtual interfaces contain "/virtual/" in the path.
         if os.path.islink(path):
-            real_path = os.readlink(path)
-            net_device_path = os.path.join(real_path, "device")
-            bond_slaves_path = os.path.join(real_path, "bonding", "slaves")
+            net_device_path = os.path.join(path, "device")
+            bond_slaves_path = os.path.join(path, "bonding", "slaves")
             if not os.path.exists(bond_slaves_path) and not os.path.exists(net_device_path):
                 continue
             physical_interfaces.append(interface)
@@ -352,6 +351,7 @@ def read_metrics(phynics):
 
     numa_hint_faults_all = 0
     numa_hint_faults_local = 0
+    numa_pages_migrated = 0
     try:
         with open("/proc/vmstat", "r", encoding="utf-8") as f:
             for line in f:
@@ -363,12 +363,16 @@ def read_metrics(phynics):
                     if parts[0] == "numa_hint_faults_local":
                         numa_hint_faults_local = int(parts[1])
                         continue
+                    if parts[0] == "numa_pages_migrated":
+                        numa_pages_migrated = int(parts[1])
+                        continue
     except FileNotFoundError:
         pass
     except PermissionError:
         pass
     metrics["NumaFaultAll"] = numa_hint_faults_all
     metrics["NumaFaultLocal"] = numa_hint_faults_local
+    metrics["NumaPageMigrate"] = numa_pages_migrated
 
     sensor_abnormal_cnt = 0
     for input_path in Path("/sys/class/hwmon").glob("hwmon*/temp*_input"):
@@ -567,10 +571,12 @@ def main():
                 print("-" * 209)
             rows = rows + 1
 
-            min_free_bytes = get_min_free_memory_gb()
             numa_fault_all = get_delta(curr["NumaFaultAll"], prev["NumaFaultAll"])
             numa_fault_local = get_delta(curr["NumaFaultLocal"], prev["NumaFaultLocal"])
             numa_fault_pct = 99 - int(100 * numa_fault_local / (numa_fault_all+1)) if numa_fault_all > 0 else 0
+            #numa_pages_migrate = get_delta(curr["NumaPageMigrate"], prev["NumaPageMigrate"])
+            #min_free_bytes = get_val3_ptr(numa_pages_migrate + numa_fault_all)
+            min_free_bytes = get_min_free_memory_gb()
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
             in_delta = get_delta(curr["InSegs"], prev["InSegs"])
