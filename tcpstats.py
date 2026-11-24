@@ -8,6 +8,7 @@ import re
 import struct
 import fcntl
 import sys
+import signal
 from pathlib import Path
 
 RED = "\033[31m"
@@ -574,6 +575,13 @@ def main():
         help="Loop count (default: 0)"
     )
 
+    parser.add_argument(
+        "-l", "--log",
+        type=str,
+        default=None,
+        help="Output log file"
+    )
+
     args = parser.parse_args()
 
     rows = 0
@@ -595,6 +603,18 @@ def main():
     lock_handle = acquire_runlock("/tmp/tcpstats.lock")
     if not lock_handle:
         sys.exit(1)
+
+    if args.log:
+        log_file = open(args.log, 'a', buffering=1)
+        if os.fork() > 0:
+            log_file.close()
+            sys.exit(0)
+        sys.stdout = log_file
+        sys.stderr = log_file
+
+    # Ignore SIGHUP (Unix/macOS only)
+    if hasattr(signal, 'SIGHUP'):
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
 
     perf_fds = open_upi_counters(event=0x02, umask=0x0f)
     prev = read_metrics(phynics, perf_fds)
@@ -674,7 +694,7 @@ def main():
             if not perf_fds:
                 numa_fault_all = get_delta(curr["NumaFaultAll"], prev["NumaFaultAll"])
                 numa_fault_local = get_delta(curr["NumaFaultLocal"], prev["NumaFaultLocal"])
-                numa_node_traffic = int(100 * (numa_fault_all - numa_fault_local) / (numa_fault_all+1)) if numa_fault_all > 0 else 0
+                numa_node_traffic = int(100 * (numa_fault_all - numa_fault_local) / (numa_fault_all+100)) if numa_fault_all > 0 else 0
             else:
                 numa_node_traffic = int(get_delta(curr["NumaNodeTraffic"], prev["NumaNodeTraffic"]) / (1024 * 1024 * 1024) / elapsed_time)
             min_free_bytes = get_min_free_memory_gb()
