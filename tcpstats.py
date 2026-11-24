@@ -116,8 +116,8 @@ def get_linux_physical_nics():
         # Check where the symlink points. Virtual interfaces contain "/virtual/" in the path.
         if os.path.islink(path):
             real_path = os.readlink(path)
-            net_device_path = os.path.join(path, "device")
-            bond_slaves_path = os.path.join(path, "bonding", "slaves")
+            net_device_path = os.path.join(real_path, "device")
+            bond_slaves_path = os.path.join(real_path, "bonding", "slaves")
             if not os.path.exists(bond_slaves_path) and not os.path.exists(net_device_path):
                 continue
             physical_interfaces.append(interface)
