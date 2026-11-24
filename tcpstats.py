@@ -1,3 +1,4 @@
+import ctypes
 import time
 import glob
 import os
@@ -13,6 +14,93 @@ RED = "\033[31m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
 RESET = "\033[0m"
+
+# Linux syscall constants (x86_64)
+SYS_PERF_EVENT_OPEN = 298
+PERF_FLAG_FD_CLOEXEC = 8
+
+class PerfEventAttr(ctypes.Structure):
+    _fields_ = [
+        ("type", ctypes.c_uint32),
+        ("size", ctypes.c_uint32),
+        ("config", ctypes.c_uint64),
+        ("sample_period", ctypes.c_uint64),
+        ("sample_type", ctypes.c_uint64),
+        ("read_format", ctypes.c_uint64),
+        ("flags", ctypes.c_uint64),
+        ("wakeup_events", ctypes.c_uint32),
+        ("bp_type", ctypes.c_uint32),
+        ("config1", ctypes.c_uint64),
+        ("config2", ctypes.c_uint64),
+        ("branch_sample_type", ctypes.c_uint64),
+        ("sample_regs_user", ctypes.c_uint64),
+        ("sample_stack_user", ctypes.c_uint32),
+        ("clockid", ctypes.c_int32),
+        ("sample_regs_intr", ctypes.c_uint64),
+        ("aux_watermark", ctypes.c_uint32),
+        ("sample_max_stack", ctypes.c_uint16),
+        ("__reserved_2", ctypes.c_uint16),
+    ]
+
+libc = ctypes.CDLL("libc.so.6", use_errno=True)
+
+def perf_event_open(pmu_type: int, config: int, cpu: int) -> int:
+    attr = PerfEventAttr()
+    attr.type = pmu_type
+    attr.size = ctypes.sizeof(PerfEventAttr)
+    attr.config = config
+
+    # pid = -1 (all processes), cpu = target socket's representative CPU, group_fd = -1
+    fd = libc.syscall(
+        SYS_PERF_EVENT_OPEN,
+        ctypes.byref(attr),
+        -1,
+        cpu,
+        -1,
+        PERF_FLAG_FD_CLOEXEC,
+    )
+    if fd < 0:
+        err = ctypes.get_errno()
+        raise OSError(err, os.strerror(err))
+    return fd
+
+def get_perf_socket_cpus():
+    """Return {socket_id: first_cpu_id} from sysfs."""
+    sockets = {}
+    for cpu_path in sorted(glob.glob("/sys/devices/system/cpu/cpu[0-9]*")):
+        pkg_file = f"{cpu_path}/topology/physical_package_id"
+        if os.path.exists(pkg_file):
+            sock = int(open(pkg_file).read().strip())
+            cpu_id = int(os.path.basename(cpu_path)[3:])
+            if sock not in sockets:
+                sockets[sock] = cpu_id
+    return sockets
+
+def open_upi_counters(event=0x02, umask=0x0f):
+    """Open file descriptors for all uncore_upi_* PMUs across all sockets."""
+    config = event | (umask << 8)
+    sockets = get_perf_socket_cpus()
+    fds = {}  # {socket_id: [fd, ...]}
+
+    for dev_path in sorted(glob.glob("/sys/bus/event_source/devices/uncore_upi_*")):
+        pmu_type = int(open(f"{dev_path}/type").read().strip())
+        for sock, cpu in sockets.items():
+            fd = perf_event_open(pmu_type, config, cpu)
+            fds.setdefault(sock, []).append(fd)
+    return fds
+
+def close_upi_counters(perf_fds):
+    for fd_list in perf_fds.values():
+        for fd in fd_list:
+            os.close(fd)
+
+def read_perf_counters(fds):
+    total = 0
+    for sock, fd_list in fds.items():
+        for fd in fd_list:
+            data = os.read(fd, 8)
+            total += struct.unpack("Q", data)[0]
+    return total * 8
 
 def acquire_runlock(lock_path="/tmp/tcpstats.lock"):
   # 必须保持文件句柄在程序运行期间一直打开，否则关闭或被垃圾回收会自动释放锁
@@ -191,7 +279,7 @@ def get_min_free_memory_gb():
     val = round(min_free_kb / (1024 * 1024), 1)
     return remove_dot_suffix(f"{val:.1f}"[0:3])
 
-def read_metrics(phynics):
+def read_metrics(phynics, perf_fds):
     metrics = {
         "TcpExt": {},
         "InSegs": 0,
@@ -200,6 +288,8 @@ def read_metrics(phynics):
         "NICRxDrops":0,
         "NICTxDrops":0
     }
+
+    metrics["NumaNodeTraffic"] = read_perf_counters(perf_fds)
 
     try:
         with open("/proc/net/netstat", "r") as f:
@@ -349,31 +439,6 @@ def read_metrics(phynics):
     metrics["RouteCacheInSlow"] = rt_cache_in_slow
     metrics["RouteCacheOutSlow"] = rt_cache_out_slow
 
-    numa_hint_faults_all = 0
-    numa_hint_faults_local = 0
-    numa_pages_migrated = 0
-    try:
-        with open("/proc/vmstat", "r", encoding="utf-8") as f:
-            for line in f:
-                parts = line.split()
-                if len(parts) == 2:
-                    if parts[0] == "numa_hint_faults":
-                        numa_hint_faults_all = int(parts[1])
-                        continue
-                    if parts[0] == "numa_hint_faults_local":
-                        numa_hint_faults_local = int(parts[1])
-                        continue
-                    if parts[0] == "numa_pages_migrated":
-                        numa_pages_migrated = int(parts[1])
-                        continue
-    except FileNotFoundError:
-        pass
-    except PermissionError:
-        pass
-    metrics["NumaFaultAll"] = numa_hint_faults_all
-    metrics["NumaFaultLocal"] = numa_hint_faults_local
-    metrics["NumaPageMigrate"] = numa_pages_migrated
-
     sensor_abnormal_cnt = 0
     for input_path in Path("/sys/class/hwmon").glob("hwmon*/temp*_input"):
         # 优先使用 _crit，不存在则回退到 _highest
@@ -499,7 +564,8 @@ def main():
     if not lock_handle:
         sys.exit(1)
 
-    prev = read_metrics(phynics)
+    perf_fds = open_upi_counters(event=0x02, umask=0x0f)
+    prev = read_metrics(phynics, perf_fds)
     start_time = time.time()
     elapsed_time = 0
     loop_count = 0
@@ -515,6 +581,7 @@ def main():
             current_mtime = os.path.getmtime(autoload_path)
             if current_mtime != autoload_mtime:
                 autoload_mtime = current_mtime
+                close_upi_counters(perf_fds)
                 os.environ["PYTHONUNBUFFERED"] = "1"
                 sys.stdout.flush()
                 sys.stderr.flush()
@@ -528,7 +595,7 @@ def main():
             elapsed_time = time.time() - start_time
             start_time = time.time()
             loop_count += 1
-            curr = read_metrics(phynics)
+            curr = read_metrics(phynics, perf_fds)
 
             non_zero_recv = 0
             non_zero_send = 0
@@ -565,17 +632,13 @@ def main():
             timestamp = time.strftime("%y%m%dT%H%M%S")
             if rows % 20 == 0:
                 print(header_fmt.format(
-                    timestamp, "IP", "ID", "WA", "SI", "NF", "Fre", "Sqz", "New", "Acp", "Arp", "Rou", "SS", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Conn", "AckW", "MaxW", "PrbW", "TSeg", "TByt",
+                    timestamp, "IP", "ID", "WA", "SI", "NB", "Fre", "Sqz", "New", "Acp", "Arp", "Rou", "SS", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Conn", "AckW", "MaxW", "PrbW", "TSeg", "TByt",
                     "RSeg", "RByt", "Retr", "Pct‱", "Fal", "Pct‱", "TmO", "Pct‱", "KDp", "Pct‱", "NDp", "Err", "Pct‱", "OfoR", "Pct‱", "Zro", "Wnt"
                 ))
                 print("-" * 209)
             rows = rows + 1
 
-            numa_fault_all = get_delta(curr["NumaFaultAll"], prev["NumaFaultAll"])
-            numa_fault_local = get_delta(curr["NumaFaultLocal"], prev["NumaFaultLocal"])
-            numa_fault_pct = 99 - int(100 * numa_fault_local / (numa_fault_all+1)) if numa_fault_all > 0 else 0
-            #numa_pages_migrate = get_delta(curr["NumaPageMigrate"], prev["NumaPageMigrate"])
-            #min_free_bytes = get_val3_ptr(numa_pages_migrate + numa_fault_all)
+            numa_node_traffic = int(get_delta(curr["NumaNodeTraffic"], prev["NumaNodeTraffic"]) / (1024 * 1024 * 1024) / elapsed_time)
             min_free_bytes = get_min_free_memory_gb()
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
@@ -635,7 +698,7 @@ def main():
 
             #timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             print(row_fmt.format(
-                timestamp, localip, idle_percent, iowait_percent, softirq_percent, numa_fault_pct, min_free_bytes, get_val3_ptr(time_squeeze),
+                timestamp, localip, idle_percent, iowait_percent, softirq_percent, numa_node_traffic, min_free_bytes, get_val3_ptr(time_squeeze),
                 get_val3_ptr(int(active_opens/elapsed_time)), get_val3_ptr(int(passive_opens/elapsed_time)),
                 get_val3_ptr(int(arp_table_full/elapsed_time)), get_val3_ptr(int((rtcache_in_slow + rtcache_out_slow)/elapsed_time)),
                 sensor_abnormal_cnt,
@@ -659,8 +722,9 @@ def main():
 
     except KeyboardInterrupt:
         pass
-
-    lock_handle.close()
+    finally:
+        close_upi_counters(perf_fds)
+        lock_handle.close()
 
 if __name__ == "__main__":
     main()
