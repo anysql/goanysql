@@ -451,6 +451,24 @@ def read_metrics(phynics, perf_fds):
     metrics["RouteCacheInSlow"] = rt_cache_in_slow
     metrics["RouteCacheOutSlow"] = rt_cache_out_slow
 
+    numa_hint_faults_all = 0
+    numa_hint_faults_local = 0
+    try:
+        with open("/proc/vmstat", "r", encoding="utf-8") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) == 2:
+                    if parts[0] == "numa_hint_faults":
+                        numa_hint_faults_all = int(parts[1])
+                        continue
+                    if parts[0] == "numa_hint_faults_local":
+                        numa_hint_faults_local = int(parts[1])
+                        continue
+    except FileNotFoundError:
+        pass
+    metrics["NumaFaultAll"] = numa_hint_faults_all
+    metrics["NumaFaultLocal"] = numa_hint_faults_local
+
     sensor_abnormal_cnt = 0
     for input_path in Path("/sys/class/hwmon").glob("hwmon*/temp*_input"):
         # 优先使用 _crit，不存在则回退到 _highest
@@ -564,8 +582,10 @@ def main():
     cpuhz = os.sysconf(os.sysconf_names['SC_CLK_TCK'])
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
-    header_fmt = "{:<13} {:11}| {:>2} {:>2} {:>2} {:>2} {:>3} {:>3} {:>3} {:>3} {:>3} {:>3} {:>2} | {:>3} {:>4} {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
-    row_fmt    = "{:<13} {:<11}| {:>2d} {:>2d} {:>2d} {:>2d} {:>3} {:>3} {:>3} {:>3} {:>3} {:>3} {:>2d} | {:>3d} {:>4} {:>3d} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
+    header_fmt = ("{:<13} {:11}| {:>2} {:>2} {:>2} {:>2} {:>3} {:>3} {:>3} {:>3} {:>3} {:>3} {:>2} | {:>3} {:>4} {:>3} {:>4} {:>3} {:>4} | "
+                 "{:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}")
+    row_fmt    = ("{:<13} {:<11}| {:>2d} {:>2d} {:>2d} {:>2d} {:>3} {:>3} {:>3} {:>3} {:>3} {:>3} {:>2d} | {:>3d} {:>4} {:>3d} {:>4} {:>3} {:>4} | "
+                 "{:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}")
 
     proc_files = {
         'IPv4 TCP': '/proc/net/tcp',
@@ -644,13 +664,19 @@ def main():
             timestamp = time.strftime("%y%m%dT%H%M%S")
             if rows % 20 == 0:
                 print(header_fmt.format(
-                    timestamp, "IP", "ID", "WA", "SI", "NB", "Fre", "Sqz", "New", "Acp", "Arp", "Rou", "SS", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Conn", "AckW", "MaxW", "PrbW", "TSeg", "TByt",
-                    "RSeg", "RByt", "Retr", "Pct‱", "Fal", "Pct‱", "TmO", "Pct‱", "KDp", "Pct‱", "NDp", "Err", "Pct‱", "OfoR", "Pct‱", "Zro", "Wnt"
+                    timestamp, "IP", "ID", "WA", "SI", "NB" if perf_fds else "NF", "Fre", "Sqz", "New", "Acp", "Arp", "Rou", "SS", "RX‰", "Rmem", "TX‰",
+                    "Wmem", "TW", "Conn", "AckW", "MaxW", "PrbW", "TSeg", "TByt", "RSeg", "RByt", "Retr", "Pct‱", "Fal", "Pct‱", "TmO", "Pct‱", "KDp",
+                    "Pct‱", "NDp", "Err", "Pct‱", "OfoR", "Pct‱", "Zro", "Wnt"
                 ))
                 print("-" * 209)
             rows = rows + 1
 
-            numa_node_traffic = int(get_delta(curr["NumaNodeTraffic"], prev["NumaNodeTraffic"]) / (1024 * 1024 * 1024) / elapsed_time) if perf_fds else -1
+            if not perf_fds:
+                numa_fault_all = get_delta(curr["NumaFaultAll"], prev["NumaFaultAll"])
+                numa_fault_local = get_delta(curr["NumaFaultLocal"], prev["NumaFaultLocal"])
+                numa_node_traffic = int(100 * (numa_fault_all - numa_fault_local) / (numa_fault_all+1)) if numa_fault_all > 0 else 0
+            else:
+                numa_node_traffic = int(get_delta(curr["NumaNodeTraffic"], prev["NumaNodeTraffic"]) / (1024 * 1024 * 1024) / elapsed_time)
             min_free_bytes = get_min_free_memory_gb()
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
