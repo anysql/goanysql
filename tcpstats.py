@@ -18,6 +18,7 @@ RESET = "\033[0m"
 # Linux syscall constants (x86_64)
 SYS_PERF_EVENT_OPEN = 298
 PERF_FLAG_FD_CLOEXEC = 8
+PERF_TYPE_RAW = 4
 
 class PerfEventAttr(ctypes.Structure):
     _fields_ = [
@@ -482,7 +483,7 @@ def remove_dot_suffix(s):
 def get_delta(curr, prev):
     if curr >= prev:
         return curr - prev
-    return curr
+    return 0
 
 def get_val3_ptr(val):
     if val < 1000:
