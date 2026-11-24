@@ -350,6 +350,26 @@ def read_metrics(phynics):
     metrics["RouteCacheInSlow"] = rt_cache_in_slow
     metrics["RouteCacheOutSlow"] = rt_cache_out_slow
 
+    numa_hint_faults_all = 0
+    numa_hint_faults_local = 0
+    try:
+        with open("/proc/vmstat", "r", encoding="utf-8") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) == 2:
+                    if parts[0] == "numa_hint_faults":
+                        numa_hint_faults_all = int(parts[1])
+                        continue
+                    if parts[0] == "numa_hint_faults_local":
+                        numa_hint_faults_local = int(parts[1])
+                        continue
+    except FileNotFoundError:
+        pass
+    except PermissionError:
+        pass
+    metrics["NumaFaultAll"] = numa_hint_faults_all
+    metrics["NumaFaultLocal"] = numa_hint_faults_local
+
     sensor_abnormal_cnt = 0
     for input_path in Path("/sys/class/hwmon").glob("hwmon*/temp*_input"):
         # 优先使用 _crit，不存在则回退到 _highest
@@ -463,8 +483,8 @@ def main():
     cpuhz = os.sysconf(os.sysconf_names['SC_CLK_TCK'])
 
     # Formatted explicitly to prevent separate % symbol tracking shift artifacts
-    header_fmt = "{:<13} {:11}| {:>2} {:>2} {:>2} {:>3} {:>3} {:>3} {:>3} {:>3} {:>3} {:>2} | {:>3} {:>4} {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
-    row_fmt    = "{:<13} {:<11}| {:>2d} {:>2d} {:>2d} {:>3} {:>3} {:>3} {:>3} {:>3} {:>3} {:>2d} | {:>3d} {:>4} {:>3d} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
+    header_fmt = "{:<13} {:11}| {:>2} {:>2} {:>2} {:>2} {:>3} {:>3} {:>3} {:>3} {:>3} {:>2} | {:>3} {:>4} {:>3} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
+    row_fmt    = "{:<13} {:<11}| {:>2d} {:>2d} {:>2d} {:>2d} {:>3} {:>3} {:>3} {:>3} {:>3} {:>2d} | {:>3d} {:>4} {:>3d} {:>4} {:>3} {:>4} | {:>4} {:>4} {:>4} | {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} | {:>3} {:>4} {:>3} {:>4} | {:>3} {:>4} {:>3} {:>3} {:>4} | {:>4} {:>4} | {:>3} {:>3}"
 
     proc_files = {
         'IPv4 TCP': '/proc/net/tcp',
@@ -541,13 +561,16 @@ def main():
             timestamp = time.strftime("%y%m%dT%H%M%S")
             if rows % 20 == 0:
                 print(header_fmt.format(
-                    timestamp, "IP", "ID", "WA", "SI", "Fre", "Sqz", "New", "Acp", "Arp", "Rou", "SS", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Conn", "AckW", "MaxW", "PrbW", "TSeg", "TByt",
+                    timestamp, "IP", "ID", "WA", "SI", "NF", "Sqz", "New", "Acp", "Arp", "Rou", "SS", "RX‰", "Rmem", "TX‰", "Wmem", "TW", "Conn", "AckW", "MaxW", "PrbW", "TSeg", "TByt",
                     "RSeg", "RByt", "Retr", "Pct‱", "Fal", "Pct‱", "TmO", "Pct‱", "KDp", "Pct‱", "NDp", "Err", "Pct‱", "OfoR", "Pct‱", "Zro", "Wnt"
                 ))
-                print("-" * 206)
+                print("-" * 205)
             rows = rows + 1
 
-            min_free_bytes = get_min_free_memory_gb()
+            #min_free_bytes = get_min_free_memory_gb()
+            numa_fault_all = get_delta(curr["NumaFaultAll"], prev["NumaFaultAll"])
+            numa_fault_local = get_delta(curr["NumaFaultLocal"], prev["NumaFaultLocal"])
+            numa_fault_pct = 99 - int(100 * numa_fault_local / (numa_fault_all+1)) if numa_fault_all > 0 else 0
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
             in_delta = get_delta(curr["InSegs"], prev["InSegs"])
@@ -606,7 +629,7 @@ def main():
 
             #timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             print(row_fmt.format(
-                timestamp, localip, idle_percent, iowait_percent, softirq_percent, min_free_bytes, get_val3_ptr(time_squeeze),
+                timestamp, localip, idle_percent, iowait_percent, softirq_percent, numa_fault_pct, get_val3_ptr(time_squeeze),
                 get_val3_ptr(int(active_opens/elapsed_time)), get_val3_ptr(int(passive_opens/elapsed_time)),
                 get_val3_ptr(int(arp_table_full/elapsed_time)), get_val3_ptr(int((rtcache_in_slow + rtcache_out_slow)/elapsed_time)),
                 sensor_abnormal_cnt,
