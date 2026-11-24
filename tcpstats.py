@@ -44,6 +44,16 @@ class PerfEventAttr(ctypes.Structure):
 
 libc = ctypes.CDLL("libc.so.6", use_errno=True)
 
+libc.syscall.restype = ctypes.c_long
+libc.syscall.argtypes = [
+    ctypes.c_long,
+    ctypes.POINTER(PerfEventAttr),
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.c_ulong,
+]
+
 def perf_event_open(pmu_type: int, config: int, cpu: int) -> int:
     attr = PerfEventAttr()
     attr.type = pmu_type
@@ -64,41 +74,42 @@ def perf_event_open(pmu_type: int, config: int, cpu: int) -> int:
         raise OSError(err, os.strerror(err))
     return fd
 
-def get_perf_socket_cpus():
-    """Return {socket_id: first_cpu_id} from sysfs."""
-    sockets = {}
-    for cpu_path in sorted(glob.glob("/sys/devices/system/cpu/cpu[0-9]*")):
-        pkg_file = f"{cpu_path}/topology/physical_package_id"
-        if os.path.exists(pkg_file):
-            sock = int(open(pkg_file).read().strip())
-            cpu_id = int(os.path.basename(cpu_path)[3:])
-            if sock not in sockets:
-                sockets[sock] = cpu_id
-    return sockets
+def _parse_cpumask(s):
+    cpus = []
+    for part in s.strip().split(","):
+        if not part:
+            continue
+        if "-" in part:
+            a, b = part.split("-")
+            cpus.extend(range(int(a), int(b) + 1))
+        else:
+            cpus.append(int(part))
+    return cpus
 
 def open_upi_counters(event=0x02, umask=0x0f):
-    """Open file descriptors for all uncore_upi_* PMUs across all sockets."""
+    fds = []
     config = event | (umask << 8)
-    sockets = get_perf_socket_cpus()
-    fds = {}  # {socket_id: [fd, ...]}
-
-    for dev_path in sorted(glob.glob("/sys/bus/event_source/devices/uncore_upi_*")):
-        pmu_type = int(open(f"{dev_path}/type").read().strip())
-        for sock, cpu in sockets.items():
-            fd = perf_event_open(pmu_type, config, cpu)
-            fds.setdefault(sock, []).append(fd)
+    for dev in sorted(glob.glob("/sys/bus/event_source/devices/uncore_upi_*")):
+        try:
+            with open(f"{dev}/type") as f:
+                pmu_type = int(f.read())
+            with open(f"{dev}/cpumask") as f:
+                cpus = _parse_cpumask(f.read())
+            for cpu in cpus:
+                fds.append(perf_event_open(pmu_type, config, cpu))
+        except (OSError, ValueError, IndexError):
+            continue                      # 没权限 / 没该 PMU：跳过，NB 记 0 或 '-'
     return fds
 
 def close_upi_counters(perf_fds):
-    for fd_list in perf_fds.values():
-        for fd in fd_list:
-            os.close(fd)
+    for fd in perf_fds or []:
+        os.close(fd)
 
 def read_perf_counters(fds):
     total = 0
-    for sock, fd_list in fds.items():
-        for fd in fd_list:
-            data = os.read(fd, 8)
+    for fd in fds or []:
+        data = os.read(fd, 8)
+        if len(data) == 8:                     # 防短读时报 struct.error
             total += struct.unpack("Q", data)[0]
     return total * 8
 
@@ -638,7 +649,7 @@ def main():
                 print("-" * 209)
             rows = rows + 1
 
-            numa_node_traffic = int(get_delta(curr["NumaNodeTraffic"], prev["NumaNodeTraffic"]) / (1024 * 1024 * 1024) / elapsed_time)
+            numa_node_traffic = int(get_delta(curr["NumaNodeTraffic"], prev["NumaNodeTraffic"]) / (1024 * 1024 * 1024) / elapsed_time) if perf_fds else -1
             min_free_bytes = get_min_free_memory_gb()
 
             out_delta = get_delta(curr["OutSegs"], prev["OutSegs"])
