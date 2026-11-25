@@ -19,7 +19,6 @@ RESET = "\033[0m"
 # Linux syscall constants (x86_64)
 SYS_PERF_EVENT_OPEN = 298
 PERF_FLAG_FD_CLOEXEC = 8
-PERF_TYPE_RAW = 4
 
 class PerfEventAttr(ctypes.Structure):
     _fields_ = [
@@ -88,32 +87,98 @@ def _parse_cpumask(s):
             cpus.append(int(part))
     return cpus
 
+def _get_pmu_format(dev_path, field):
+    with open(os.path.join(dev_path, "format", field)) as f:
+        target, _, bit_range = f.read().strip().partition(":")
+    start_str, _, _ = bit_range.partition("-")
+    return target, int(start_str)
+
+def _encode_df_raw(df_dev, event, umask):
+    """Encode raw (event, umask) using sysfs format bitfields (e.g., event=0-7,32-37)."""
+    config = 0
+    for key, val in (("event", event), ("umask", umask)):
+        fmt_path = f"{df_dev}/format/{key}"
+        if not os.path.exists(fmt_path):
+            continue
+        with open(fmt_path) as ff:
+            fmt = ff.read().strip()
+        _, bit_ranges = fmt.split(":", 1)
+        src_offset = 0
+        for r in bit_ranges.split(","):
+            lo, hi = map(int, r.split("-")) if "-" in r else (int(r), int(r))
+            width = hi - lo + 1
+            config |= ((val >> src_offset) & ((1 << width) - 1)) << lo
+            src_offset += width
+    return config
+
 def open_upi_counters(event=0x02, umask=0x0f):
     fds = []
     config = event | (umask << 8)
-    for dev in sorted(glob.glob("/sys/bus/event_source/devices/uncore_upi_*")):
+    intel_patterns = [
+        ("/sys/bus/event_source/devices/uncore_upi_*", event, umask, 8),
+        ("/sys/bus/event_source/devices/uncore_qpi_*", 0x02, 0x08, 8),  # TxL_FLITS.ALL_DATA
+    ]
+    for pattern, ev_code, umask_code, bytes_per_beat in intel_patterns:
+        config = ev_code | (umask_code << 8)
+        for dev in sorted(glob.glob(pattern)):
+            try:
+                with open(f"{dev}/type") as f:
+                    pmu_type = int(f.read())
+                with open(f"{dev}/cpumask") as f:
+                    cpus = _parse_cpumask(f.read())
+                for cpu in cpus:
+                    fds.append((perf_event_open(pmu_type, config, cpu), bytes_per_beat))
+            except (OSError, ValueError, IndexError):
+                continue
+
+    # 2. AMD Data Fabric Inter-Socket Infinity Fabric (32 bytes per beat)
+    df_dev = "/sys/bus/event_source/devices/amd_df"
+    if os.path.isdir(df_dev):
         try:
-            with open(f"{dev}/type") as f:
+            with open(f"{df_dev}/type") as f:
                 pmu_type = int(f.read())
-            with open(f"{dev}/cpumask") as f:
+            with open(f"{df_dev}/cpumask") as f:
                 cpus = _parse_cpumask(f.read())
-            for cpu in cpus:
-                fds.append(perf_event_open(pmu_type, config, cpu))
+
+            events_dir = f"{df_dev}/events"
+            if os.path.isdir(events_dir):
+                # Zen 2 / Zen 3: sysfs named events exist
+                ev_paths = sorted(
+                    glob.glob(f"{events_dir}/local_socket_inf*_inbound_data_beats_ccm*")
+                )
+                df_events = [
+                    os.path.basename(p)
+                    for p in ev_paths
+                    if not p.endswith((".unit", ".scale"))
+                ]
+                scale = max(1.0, len(df_events) / 4.0)
+                for ev in df_events:
+                    df_config = _parse_sysfs_event_config(df_dev, ev)
+                    for cpu in cpus:
+                        fds.append((perf_event_open(pmu_type, df_config, cpu), 32 * scale))
+            else:
+                # Zen 4 / Zen 5 (DFv4, e.g., EPYC 9654 Genoa): raw xGMI data beat codes
+                # 4 xGMI links (0x16..0x19) fit in the 4 hardware DF counters (no multiplexing)
+                for ev_code in (0x16, 0x17, 0x18, 0x19):
+                    df_config = _encode_df_raw(df_dev, ev_code, 0x02)
+                    for cpu in cpus:
+                        fds.append((perf_event_open(pmu_type, df_config, cpu), 32))
         except (OSError, ValueError, IndexError):
-            continue                      # 没权限 / 没该 PMU：跳过，NB 记 0 或 '-'
+            pass
+
     return fds
 
 def close_upi_counters(perf_fds):
-    for fd in perf_fds or []:
+    for fd,scale in perf_fds or []:
         os.close(fd)
 
 def read_perf_counters(fds):
     total = 0
-    for fd in fds or []:
+    for fd,scale in fds or []:
         data = os.read(fd, 8)
         if len(data) == 8:                     # 防短读时报 struct.error
-            total += struct.unpack("Q", data)[0]
-    return total * 8
+            total += struct.unpack("Q", data)[0] * scale
+    return total
 
 def acquire_runlock(lock_path="/tmp/tcpstats.lock"):
   # 必须保持文件句柄在程序运行期间一直打开，否则关闭或被垃圾回收会自动释放锁
